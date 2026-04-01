@@ -12,6 +12,9 @@ class AppConfig(BaseModel):
     timezone: str
     login_endpoint: str
     availability_endpoint: str
+    booking_endpoint: str
+    list_bookings_endpoint: str
+    cancel_booking_endpoint: str
 
 class Settings(BaseSettings):
     config_path: Path = Path("config.yaml")

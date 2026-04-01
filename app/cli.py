@@ -3,6 +3,7 @@ from app.client import BookingClient
 from app.config import app_config
 from app.auth import login, get_cached_token
 from app.availability import get_available_teachers, get_teacher_slots, format_calendar
+from app.booking import book_lesson, get_bookings, cancel_booking
 
 from typing import Annotated
 
@@ -103,6 +104,98 @@ def teacher_calendar(
     Display a teacher's availability as a calendar grid.
     """
     show_teacher_calendar(teacher_id)
+
+@app.command(name="book-class")
+def book_class(
+    datetime: Annotated[str, typer.Option("--datetime", help="Lesson start datetime in ISO format")],
+    teacher_id: Annotated[str, typer.Option("--teacher-id", help="Teacher ID to book")]
+):
+    """
+    Book a class with a specific teacher at a specific time.
+    """
+    client = BookingClient(base_url=app_config.base_url)
+    try:
+        token = login(client, use_cache=True)
+        if not token:
+            typer.echo("Authentication: Failure")
+            return
+            
+        client.set_token(token)
+        result = book_lesson(client, teacher_id, datetime)
+        
+        if result.get("status") == "success":
+            typer.echo("Booking status: Success")
+            msg = result.get("message", {})
+            typer.echo(f"Booking ID: {msg.get('id')}")
+            typer.echo(f"Class with {msg.get('staff', {}).get('first_name')} {msg.get('staff', {}).get('last_name')} confirmed.")
+        else:
+            typer.echo("Booking status: Error")
+            typer.echo(f"Message: {result.get('message')}")
+    finally:
+        client.close()
+
+@app.command(name="list-classes")
+def list_classes(
+    all: Annotated[bool, typer.Option("--all", help="Show all classes, including past and cancelled")] = False
+):
+    """
+    List your upcoming bookings.
+    """
+    client = BookingClient(base_url=app_config.base_url)
+    try:
+        token = login(client, use_cache=True)
+        if not token:
+            typer.echo("Authentication: Failure")
+            return
+            
+        client.set_token(token)
+        bookings = get_bookings(client)
+        
+        if not bookings:
+            typer.echo("No bookings found.")
+            return
+
+        # Filter for upcoming and not cancelled unless --all is specified
+        if not all:
+            bookings = [b for b in bookings if b.get("status") != "cancelled" and not b.get("past")]
+
+        if not bookings:
+            typer.echo("No upcoming bookings found. Use --all to see past/cancelled classes.")
+            return
+
+        typer.echo(f"{'ID':<10} | {'Staff ID':<10} | {'Staff Name':<20} | {'Date':<10} | {'Time':<10} | {'Status':<10}")
+        typer.echo("-" * 80)
+        for b in bookings:
+            staff = b.get("staff", {})
+            staff_name = f"{staff.get('first_name', '')} {staff.get('last_name', '')}".strip()
+            typer.echo(f"{b.get('id'):<10} | {b.get('staff_id'):<10} | {staff_name:<20} | {b.get('date'):<10} | {b.get('start_time'):<10} | {b.get('status'):<10}")
+    finally:
+        client.close()
+
+@app.command(name="cancel-class")
+def cancel_class(
+    booking_id: Annotated[str, typer.Option("--booking-id", help="Booking ID to cancel")]
+):
+    """
+    Cancel a specific class booking.
+    """
+    client = BookingClient(base_url=app_config.base_url)
+    try:
+        token = login(client, use_cache=True)
+        if not token:
+            typer.echo("Authentication: Failure")
+            return
+            
+        client.set_token(token)
+        result = cancel_booking(client, booking_id)
+        
+        if result.get("status") == "success":
+            typer.echo(f"Successfully cancelled booking {booking_id}.")
+        else:
+            typer.echo(f"Failed to cancel booking {booking_id}.")
+            typer.echo(f"Message: {result.get('message')}")
+    finally:
+        client.close()
 
 if __name__ == "__main__":
     app()

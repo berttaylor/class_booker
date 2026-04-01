@@ -25,9 +25,28 @@ python main.py check-availability --datetime "2026-04-08T13:30:00+02:00"
 ```
 
 View a teacher's availability calendar:
-
 ```bash
 python main.py teacher-calendar --teacher-id "81"
+```
+
+Book a class:
+```bash
+python main.py book-class --teacher-id "81" --datetime "2026-04-08T18:30:00+02:00"
+```
+
+List upcoming classes:
+```bash
+python main.py list-classes
+```
+
+List all classes (including past and cancelled):
+```bash
+python main.py list-classes --all
+```
+
+Cancel a class:
+```bash
+python main.py cancel-class --booking-id "221939"
 ```
 
 ## Features (Prototype)
@@ -36,3 +55,5 @@ python main.py teacher-calendar --teacher-id "81"
 *   Availability check for a target lesson datetime.
 *   Listing available teachers.
 *   **Teacher Calendar View**: Visual grid of all slots (available/booked) for a specific teacher.
+*   **Automated Booking**: Perform lesson booking for a specific teacher and time.
+*   **Booking Management**: List upcoming classes and cancel existing bookings.
