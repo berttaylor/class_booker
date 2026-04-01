@@ -1,0 +1,4 @@
+base_url: "https://api.worldsacross.com/api"
+timezone: "Europe/Madrid"
+login_endpoint: "/auth/login"
+availability_endpoint: "/auth/booking/calendar"

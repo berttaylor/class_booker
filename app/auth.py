@@ -1,0 +1,83 @@
+import os
+import json
+import time
+import base64
+from typing import Optional
+from pathlib import Path
+from app.client import BookingClient
+from app.config import app_config, settings
+
+TOKEN_CACHE_FILE = Path(".token_cache.json")
+
+def _is_token_expired(token: str) -> bool:
+    """
+    Decodes the JWT payload to check if it's expired.
+    JWT is Header.Payload.Signature
+    """
+    try:
+        _, payload_b64, _ = token.split('.')
+        # Fix padding
+        missing_padding = len(payload_b64) % 4
+        if missing_padding:
+            payload_b64 += '=' * (4 - missing_padding)
+            
+        payload_json = base64.b64decode(payload_b64).decode('utf-8')
+        payload = json.loads(payload_json)
+        
+        # exp is a Unix timestamp
+        exp = payload.get("exp")
+        if not exp:
+            return False # No exp claim, assume valid for now
+            
+        # Add 30 seconds buffer
+        return time.time() > (exp - 30)
+    except Exception:
+        return True # If decoding fails, treat as expired
+
+def get_cached_token() -> Optional[str]:
+    if not TOKEN_CACHE_FILE.exists():
+        return None
+    try:
+        with open(TOKEN_CACHE_FILE, "r") as f:
+            data = json.load(f)
+            token = data.get("access_token")
+            if token and not _is_token_expired(token):
+                return token
+    except Exception:
+        pass
+    return None
+
+def _save_cached_token(token: str):
+    try:
+        with open(TOKEN_CACHE_FILE, "w") as f:
+            json.dump({"access_token": token}, f)
+    except Exception as e:
+        print(f"Warning: Failed to cache token: {e}")
+
+def login(client: BookingClient, use_cache: bool = True) -> Optional[str]:
+    """
+    Authenticates against the booking backend.
+    Returns access_token if successful, None otherwise.
+    If use_cache=True, attempts to load a valid token from the local cache.
+    """
+    if use_cache:
+        cached_token = get_cached_token()
+        if cached_token:
+            return cached_token
+
+    data = {
+        "email": settings.login_email,
+        "password": settings.login_password
+    }
+    
+    response = client.post(app_config.login_endpoint, json=data)
+    
+    if response.status_code == 200:
+        res_data = response.json()
+        if res_data.get("status") == "success":
+            token = res_data.get("access_token")
+            if token:
+                _save_cached_token(token)
+            return token
+    
+    return None

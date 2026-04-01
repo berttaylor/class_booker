@@ -1,0 +1,38 @@
+# Spanish Class Booking Automation — Prototype
+
+Small Python CLI tool that automates Spanish class booking by calling the booking platform's backend APIs directly.
+
+## Setup
+
+1.  Install Python 3.12+
+2.  Install dependencies:
+    ```bash
+    pip install -r requirements.txt
+    ```
+3.  Configure `.env` with your credentials:
+    ```env
+    LOGIN_EMAIL=your@email.com
+    LOGIN_PASSWORD=your_password
+    ```
+4.  Configure `config.yaml` if needed (defaults provided for worldsacross.com).
+
+## Usage
+
+Check availability for a specific datetime:
+
+```bash
+python main.py check-availability --datetime "2026-04-08T13:30:00+02:00"
+```
+
+View a teacher's availability calendar:
+
+```bash
+python main.py teacher-calendar --teacher-id "81"
+```
+
+## Features (Prototype)
+
+*   Authentication against the booking backend.
+*   Availability check for a target lesson datetime.
+*   Listing available teachers.
+*   **Teacher Calendar View**: Visual grid of all slots (available/booked) for a specific teacher.

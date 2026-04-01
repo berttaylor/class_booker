@@ -1,0 +1,7 @@
+httpx
+typer
+python-dotenv
+PyYAML
+pydantic
+pydantic-settings
+pytz
