@@ -2,7 +2,7 @@ import typer
 from app.client import BookingClient
 from app.config import app_config
 from app.auth import login, get_cached_token
-from app.availability import get_available_teachers, get_teacher_slots, format_calendar
+from app.availability import get_available_teachers, get_teacher_slots, format_calendar, get_tutors_map
 from app.booking import book_lesson, get_bookings, cancel_booking
 from app.utils import get_server_time
 from app.scheduler import run_due_process
@@ -35,10 +35,14 @@ def main(
 def show_teacher_calendar(teacher_id: str, use_cache: bool = True):
     client = BookingClient(base_url=app_config.base_url)
     try:
-        typer.echo(f"Fetching calendar for Teacher ID: {teacher_id}")
         token = login(client, use_cache=use_cache)
         if token:
             client.set_token(token)
+            tutor_map = get_tutors_map(client)
+            tutor_data = tutor_map.get(str(teacher_id), {})
+            teacher_name = tutor_data.get("name", f"Teacher {teacher_id}")
+            typer.echo(f"Fetching calendar for: {teacher_name} (ID: {teacher_id})")
+            
             slots = get_teacher_slots(client, teacher_id)
             if not slots and use_cache:
                 # If cached token failed (maybe expired but exp claim was missing or wrong)
@@ -79,9 +83,9 @@ def run_check(datetime: str, use_cache: bool = True):
                  teachers = get_available_teachers(client, datetime)
 
         if teachers:
-            typer.echo(f"Found {len(teachers)} available teachers:")
+            typer.echo(f"\nFound {len(teachers)} available teachers:")
             for t in teachers:
-                typer.echo(f" - {t.get('name')} (ID: {t.get('id')}) at {t.get('start_time_local')} ({app_config.timezone})")
+                typer.echo(f" ✓ {t.get('name'):<30} (ID: {t.get('id'):<4}) at {t.get('start_time_local')} ({app_config.timezone})")
         else:
             typer.echo("No available teachers found for this slot.")
         typer.echo("\nRaw response summary: Fetching completed.")
@@ -258,6 +262,35 @@ def run_due(
     Checks for due bookings and performs them automatically.
     """
     run_due_process(verbose=verbose, force=force, force_soft=force_soft)
+
+@app.command(name="list-tutors")
+def list_tutors():
+    """
+    List all available tutors.
+    """
+    client = BookingClient(base_url=app_config.base_url)
+    try:
+        token = login(client, use_cache=True)
+        if not token:
+            typer.echo("Authentication: Failure")
+            return
+            
+        client.set_token(token)
+        tutor_map = get_tutors_map(client)
+        
+        if not tutor_map:
+            typer.echo("No tutors found.")
+            return
+
+        typer.echo(f"{'ID':<10} | {'Name':<30} | {'Favorite':<10}")
+        typer.echo("-" * 55)
+        # Sort by Name for readability
+        sorted_tutors = sorted(tutor_map.items(), key=lambda x: x[1]['name'])
+        for tid, data in sorted_tutors:
+            fav_status = "★" if data.get("is_favorite") else " "
+            typer.echo(f"{tid:<10} | {data.get('name'):<30} | {fav_status:<10}")
+    finally:
+        client.close()
 
 if __name__ == "__main__":
     app()

@@ -18,6 +18,34 @@ def normalize_datetime(dt_str: str) -> str:
         return dt_str
 
 from collections import defaultdict
+from typing import Dict, Optional, Any
+
+def get_tutors_map(client: BookingClient) -> Dict[str, Dict[str, Any]]:
+    """
+    Fetches the list of tutors and returns a mapping of ID to its data (name, is_favorite).
+    """
+    response = client.get(app_config.tutors_list_endpoint)
+    if response.status_code != 200:
+        return {}
+    
+    try:
+        res_data = response.json()
+        tutors = res_data.get("data", [])
+        
+        tutor_map = {}
+        for tutor in tutors:
+            tid = str(tutor.get("id"))
+            name = tutor.get("name")
+            is_favorite = tutor.get("is_favorite", False)
+            if tid and name:
+                tutor_map[tid] = {
+                    "name": name,
+                    "is_favorite": is_favorite
+                }
+        return tutor_map
+    except Exception as e:
+        print(f"Error fetching tutors list: {e}")
+        return {}
 
 def get_teacher_slots(client: BookingClient, teacher_id: str) -> list:
     """
@@ -130,6 +158,8 @@ def get_available_teachers(client: BookingClient, lesson_datetime: str) -> list:
     Calls the availability endpoint and returns a list of available teachers.
     Each teacher should be a dict with at least 'id' and 'name'.
     """
+    tutor_map = get_tutors_map(client)
+    
     # duration 60 as per example
     data = {
         "duration": 60
@@ -163,9 +193,12 @@ def get_available_teachers(client: BookingClient, lesson_datetime: str) -> list:
                     continue
                 for slot in slots:
                     if slot.get("start_time") == target_utc and slot.get("status") == "available":
+                        teacher_id_str = str(teacher_id)
+                        tutor_data = tutor_map.get(teacher_id_str, {})
+                        name = tutor_data.get("name", f"Teacher {teacher_id_str}")
                         available_teachers.append({
-                            "id": teacher_id,
-                            "name": f"Teacher {teacher_id}",
+                            "id": teacher_id_str,
+                            "name": name,
                             "start_time_local": dt.fromisoformat(slot["start_time"].replace('Z', '+00:00')).astimezone(pytz.timezone(app_config.timezone)).strftime("%H:%M")
                         })
                         break

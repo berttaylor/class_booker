@@ -16,6 +16,7 @@ class AppConfig(BaseModel):
     list_bookings_endpoint: str
     cancel_booking_endpoint: str
     server_time_endpoint: str
+    tutors_list_endpoint: str
 
 class Settings(BaseSettings):
     config_path: Path = Path("config.yaml")

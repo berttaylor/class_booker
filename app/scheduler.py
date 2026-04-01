@@ -167,8 +167,13 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
         # 2. Authenticate and fetch bookings once
         print("Fetching current bookings...")
         bookings = get_bookings(client)
-        approved_bookings = [b for b in bookings if b.get("status") == "approved"]
-        print(f"Found {len(approved_bookings)} active bookings.")
+        # Filter for approved AND future (or today) bookings
+        # b.get("past") is True for historical classes in the API response
+        approved_bookings = [
+            b for b in bookings 
+            if b.get("status") == "approved" and not b.get("past")
+        ]
+        print(f"Found {len(approved_bookings)} active future bookings.")
         
         for rule in due_rules:
             target_slot_iso = rule_lesson_times[rule.id]
@@ -177,8 +182,10 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
             target_date_str = target_dt.strftime("%Y-%m-%d")
             target_start_time_str = target_dt.strftime("%H:%M:00")
             
-            print(f"\n--- Processing Rule: {rule.id} ---")
+            print(f"\n==================================================")
+            print(f"--- Processing Rule: {rule.id} ---")
             print(f"Target: {target_date_str} {target_start_time_str} ({rules_data.timezone})")
+            print(f"==================================================")
 
             # Check if already booked
             already_booked = False
@@ -194,12 +201,20 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
             # Fetch availability
             print("Checking teacher availability...")
             available_teachers = get_available_teachers(client, target_slot_iso)
+            available_info = ", ".join([f"{t['name']} ({t['id']})" for t in available_teachers])
             available_teacher_ids = [str(t["id"]) for t in available_teachers]
-            print(f"Teachers available at this slot: {available_teacher_ids}")
+            print(f"Teachers available at this slot: {available_info}")
             
             # Build candidate list from rule teacher_ids (intersect with available)
-            candidates = [str(tid) for tid in rule.teacher_ids if str(tid) in available_teacher_ids]
-            print(f"Preferred teachers available: {candidates}")
+            candidates = []
+            for tid in rule.teacher_ids:
+                tid_str = str(tid)
+                if tid_str in available_teacher_ids:
+                    t_info = next(t for t in available_teachers if str(t["id"]) == tid_str)
+                    candidates.append(t_info)
+            
+            candidate_info = ", ".join([f"{c['name']} ({c['id']})" for c in candidates])
+            print(f"Preferred teachers available: {candidate_info}")
             
             if not candidates:
                 print(f"Status: No preferred teachers available. Skipping.")
@@ -207,16 +222,17 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
             
             # Filter candidates by 60min daily limit
             final_candidates = []
-            for tid in candidates:
+            for cand in candidates:
+                tid = str(cand["id"])
                 booked_minutes = 0
                 for b in approved_bookings:
                     if str(b.get("staff_id")) == tid and b.get("date") == target_date_str:
                         # Assume each booking is 30 mins based on spec
                         booked_minutes += 30
                 if booked_minutes < 60:
-                    final_candidates.append(tid)
+                    final_candidates.append(cand)
                 else:
-                    print(f"Teacher {tid}: Limit reached (60m already booked on {target_date_str}).")
+                    print(f"Teacher {cand['name']} ({tid}): Limit reached (60m already booked on {target_date_str}).")
 
             if not final_candidates:
                 print(f"Status: All preferred teachers reached daily limit. Skipping.")
@@ -230,13 +246,16 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
                     prev_teacher = str(b.get("staff_id"))
                     break
             
-            if prev_teacher and prev_teacher in final_candidates:
-                # Move to front
-                final_candidates.remove(prev_teacher)
-                final_candidates.insert(0, prev_teacher)
-                print(f"Teacher {prev_teacher}: Prioritized (taught previous adjacent slot).")
+            if prev_teacher:
+                prev_cand = next((c for c in final_candidates if str(c["id"]) == prev_teacher), None)
+                if prev_cand:
+                    # Move to front
+                    final_candidates.remove(prev_cand)
+                    final_candidates.insert(0, prev_cand)
+                    print(f"Teacher {prev_cand['name']} ({prev_teacher}): Prioritized (taught previous adjacent slot).")
 
-            print(f"Final candidate order: {final_candidates}")
+            final_candidate_info = ", ".join([f"{c['name']} ({c['id']})" for c in final_candidates])
+            print(f"Final candidate order: {final_candidate_info}")
 
             # 3. Wait until exact booking open time
             # Re-sync time just before waiting to be as accurate as possible
@@ -247,31 +266,41 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
             if wait_seconds > 0:
                 print(f"Waiting {wait_seconds:.2f}s for booking window to open at {booking_open_dt.strftime('%H:%M:%S')}...")
                 # Simple countdown for visibility
-                while wait_seconds > 0.5:
-                    time.sleep(min(wait_seconds, 1.0))
-                    now_utc, _ = get_synced_now(client)
-                    now_local = now_utc.astimezone(local_tz)
-                    wait_seconds = (booking_open_dt - now_local).total_seconds()
-                    if wait_seconds > 0:
-                        print(f"  T-minus: {wait_seconds:.1f}s...", end="\r")
+                try:
+                    while wait_seconds > 0.1:
+                        # Clear the line and print countdown
+                        sys.stdout.write(f"\r  T-minus: {wait_seconds:6.1f}s... ")
+                        sys.stdout.flush()
+                        
+                        sleep_time = min(wait_seconds, 0.5)
+                        time.sleep(sleep_time)
+                        
+                        now_utc, _ = get_synced_now(client)
+                        now_local = now_utc.astimezone(local_tz)
+                        wait_seconds = (booking_open_dt - now_local).total_seconds()
+                except KeyboardInterrupt:
+                    print("\nWait interrupted by user.")
+                    return
                 
-                # Small final sleep to ensure we are definitely over the mark
+                # Ensure we are over the mark
                 if wait_seconds > 0:
-                    time.sleep(wait_seconds + 0.1)
+                    time.sleep(wait_seconds + 0.05)
                 print("\nWindow OPEN! Attempting booking...")
 
             # Attempt booking
             success = False
-            for tid in final_candidates:
+            for cand in final_candidates:
+                tid = str(cand["id"])
+                tname = cand["name"]
                 if force_soft:
-                    print(f"[DRY RUN] Would attempt Teacher {tid} booking for {target_slot_iso}")
+                    print(f"[DRY RUN] Would attempt Teacher {tname} ({tid}) booking for {target_slot_iso}")
                     success = True # Consider it a "success" for the dry run flow
                     continue
 
-                print(f"Attempting Teacher {tid}...")
+                print(f"Attempting Teacher {tname} ({tid})...")
                 res = book_lesson(client, tid, target_slot_iso)
                 if res.get("status") == "success":
-                    print(f"SUCCESS! Booked Teacher {tid}.")
+                    print(f"SUCCESS! Booked Teacher {tname} ({tid}).")
                     success = True
                     # Update local bookings list so subsequent rules know about this booking
                     approved_bookings.append({
@@ -282,7 +311,7 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
                     })
                     break
                 else:
-                    print(f"Failed for Teacher {tid}: {res.get('message')}")
+                    print(f"Failed for Teacher {tname} ({tid}): {res.get('message')}")
             
             if not success:
                 print(f"All booking attempts failed for rule {rule.id}.")

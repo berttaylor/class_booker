@@ -29,6 +29,11 @@ View a teacher's availability calendar:
 python main.py teacher-calendar --teacher-id "81"
 ```
 
+List all tutors:
+```bash
+python main.py list-tutors
+```
+
 Book a class:
 ```bash
 python main.py book-class --teacher-id "81" --datetime "2026-04-08T18:30:00+02:00"
