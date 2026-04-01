@@ -49,6 +49,11 @@ Cancel a class:
 python main.py cancel-class --booking-id "221939"
 ```
 
+Check server time synchronization:
+```bash
+python main.py server-time
+```
+
 ## Features (Prototype)
 
 *   Authentication against the booking backend.

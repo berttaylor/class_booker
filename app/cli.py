@@ -4,6 +4,7 @@ from app.config import app_config
 from app.auth import login, get_cached_token
 from app.availability import get_available_teachers, get_teacher_slots, format_calendar
 from app.booking import book_lesson, get_bookings, cancel_booking
+from app.utils import get_server_time
 
 from typing import Annotated
 
@@ -194,6 +195,54 @@ def cancel_class(
         else:
             typer.echo(f"Failed to cancel booking {booking_id}.")
             typer.echo(f"Message: {result.get('message')}")
+    finally:
+        client.close()
+
+@app.command(name="server-time")
+def server_time():
+    """
+    Checks the server time and compares it with the local system time.
+    """
+    from datetime import datetime as dt, timezone
+    client = BookingClient(base_url=app_config.base_url)
+    try:
+        token = login(client)
+        if token:
+            client.set_token(token)
+            typer.echo("Checking server time synchronization...")
+            
+            local_before = dt.now(timezone.utc)
+            result = get_server_time(client)
+            
+            if "status" in result and result["status"] == "error":
+                typer.echo(f"Failure: {result.get('message', 'Unknown error')}")
+                return
+
+            typer.echo(f"Server Response: {result}")
+            
+            # Common keys for time
+            server_time_str = result.get("time") or result.get("datetime") or result.get("now")
+            if server_time_str:
+                try:
+                    server_dt = dt.fromisoformat(server_time_str.replace('Z', '+00:00'))
+                    if server_dt.tzinfo is None:
+                        server_dt = server_dt.replace(tzinfo=timezone.utc)
+                    
+                    diff = (server_dt - local_before).total_seconds()
+                    typer.echo(f"Server Time (UTC): {server_dt.isoformat()}")
+                    typer.echo(f"Local Time (UTC):  {local_before.isoformat()}")
+                    typer.echo(f"Difference: {diff:+.3f} seconds")
+                    
+                    if abs(diff) > 5:
+                        typer.echo("Warning: Server and local time are out of sync by more than 5 seconds!")
+                    else:
+                        typer.echo("Sync Check: OK")
+                except Exception:
+                    typer.echo("Could not parse server time for comparison.")
+            else:
+                 typer.echo("Server response did not contain a recognizable time field for automatic comparison.")
+        else:
+            typer.echo("Authentication: Failure")
     finally:
         client.close()
 
