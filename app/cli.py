@@ -5,6 +5,7 @@ from app.auth import login, get_cached_token
 from app.availability import get_available_teachers, get_teacher_slots, format_calendar
 from app.booking import book_lesson, get_bookings, cancel_booking
 from app.utils import get_server_time
+from app.scheduler import run_due_process
 
 from typing import Annotated
 
@@ -229,9 +230,10 @@ def server_time():
                         server_dt = server_dt.replace(tzinfo=timezone.utc)
                     
                     diff = (server_dt - local_before).total_seconds()
+                    status_icon = "✓" if abs(diff) < 5 else "✗"
                     typer.echo(f"Server Time (UTC): {server_dt.isoformat()}")
                     typer.echo(f"Local Time (UTC):  {local_before.isoformat()}")
-                    typer.echo(f"Difference: {diff:+.3f} seconds")
+                    typer.echo(f"Difference: {diff:+.3f} seconds {status_icon}")
                     
                     if abs(diff) > 5:
                         typer.echo("Warning: Server and local time are out of sync by more than 5 seconds!")
@@ -245,6 +247,17 @@ def server_time():
             typer.echo("Authentication: Failure")
     finally:
         client.close()
+
+@app.command(name="run-due")
+def run_due(
+    verbose: Annotated[bool, typer.Option("--verbose", help="Show verbose output about upcoming rules")] = False,
+    force: Annotated[bool, typer.Option("--force", help="Force the next upcoming rule to be processed now")] = False,
+    force_soft: Annotated[bool, typer.Option("--force-soft", help="Soft force: process everything but skip the final booking request")] = False
+):
+    """
+    Checks for due bookings and performs them automatically.
+    """
+    run_due_process(verbose=verbose, force=force, force_soft=force_soft)
 
 if __name__ == "__main__":
     app()

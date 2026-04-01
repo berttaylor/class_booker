@@ -49,6 +49,26 @@ Cancel a class:
 python main.py cancel-class --booking-id "221939"
 ```
 
+Run automated bookings for due rules:
+```bash
+python main.py run-due
+```
+
+Show verbose output about the next upcoming rule:
+```bash
+python main.py run-due --verbose
+```
+
+Force the next upcoming rule to be processed now (actual booking):
+```bash
+python main.py run-due --force
+```
+
+Soft-force (Dry run) the next upcoming rule (simulate everything but don't book):
+```bash
+python main.py run-due --force-soft
+```
+
 Check server time synchronization:
 ```bash
 python main.py server-time
@@ -62,3 +82,4 @@ python main.py server-time
 *   **Teacher Calendar View**: Visual grid of all slots (available/booked) for a specific teacher.
 *   **Automated Booking**: Perform lesson booking for a specific teacher and time.
 *   **Booking Management**: List upcoming classes and cancel existing bookings.
+*   **Automated Scheduling**: Automatically book lessons based on rules when the booking window opens using `run-due`.

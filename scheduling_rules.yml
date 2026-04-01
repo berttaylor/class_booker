@@ -1,0 +1,35 @@
+timezone: Europe/Madrid
+
+booking:
+  open_offset_days: 7
+  open_offset_minutes: 30
+  precheck_lead_seconds: 120
+
+rules:
+  - id: midday_1
+    enabled: true
+    weekdays: [mon, tue, wed, thu, fri]
+    start_time: "13:30"
+    teacher_ids: [159, 204, 121]
+    allow_fallbacks: true
+
+  - id: midday_2
+    enabled: true
+    weekdays: [mon, tue, wed, thu, fri]
+    start_time: "14:00"
+    teacher_ids: [159, 204, 121]
+    allow_fallbacks: true
+
+  - id: evening_1
+    enabled: true
+    weekdays: [mon, tue, wed, thu, fri]
+    start_time: "18:00"
+    teacher_ids: [184, 81, 67]
+    allow_fallbacks: true
+
+  - id: evening_2
+    enabled: true
+    weekdays: [mon, tue, wed, thu, fri]
+    start_time: "18:30"
+    teacher_ids: [184, 81, 67]
+    allow_fallbacks: true
