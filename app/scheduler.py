@@ -234,8 +234,13 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
             candidate_info = ", ".join([f"{c['name']} ({c['id']})" for c in candidates])
             print(f"Preferred teachers available: {candidate_info}")
             
+            # If no preferred teachers and fallback is allowed, consider all other available teachers
+            if not candidates and rule.allow_fallbacks:
+                print("No preferred teachers available. Fallback is ENABLED. Considering all available teachers...")
+                candidates = available_teachers
+            
             if not candidates:
-                print(f"Status: No preferred teachers available. Skipping.")
+                print(f"Status: No suitable teachers available. Skipping.")
                 continue
             
             # Filter candidates by 60min daily limit
@@ -286,8 +291,13 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
                 # Simple countdown for visibility
                 try:
                     while wait_seconds > 0.1:
+                        # Format time until (HH:MM:SS)
+                        hours, remainder = divmod(int(wait_seconds), 3600)
+                        minutes, seconds = divmod(remainder, 60)
+                        time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                        
                         # Clear the line and print countdown
-                        sys.stdout.write(f"\r  T-minus: {wait_seconds:6.1f}s... ")
+                        sys.stdout.write(f"\r  T-minus: {time_str}... ")
                         sys.stdout.flush()
                         
                         sleep_time = min(wait_seconds, 0.5)
