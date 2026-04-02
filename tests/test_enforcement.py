@@ -1,11 +1,9 @@
 import pytest
 import httpx
+from pytest_socket import SocketBlockedError
 
-def test_external_call_fails():
-    """This test should fail because sockets are disabled."""
-    with pytest.raises(Exception) as excinfo:
+
+def test_sockets_are_blocked():
+    """Verifies --disable-socket in pytest.ini is active and blocking real network calls."""
+    with pytest.raises(SocketBlockedError):
         httpx.get("https://google.com")
-    
-    # pytest-socket raises SocketBlockedError which is a subclass of RuntimeError
-    # or sometimes it just says "Socket access is disabled"
-    assert "socket" in str(excinfo.value).lower() or "blocked" in str(excinfo.value).lower()
