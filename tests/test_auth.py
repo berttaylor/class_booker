@@ -4,8 +4,8 @@ import httpx
 
 from tests.conftest import make_jwt
 from tests.base import BaseTest
-from app.auth import is_token_expired, get_cached_token, _save_cached_token, login
-import app.auth as auth_module
+from app.api.auth import is_token_expired, get_cached_token, _save_cached_token, login
+import app.api.auth as auth_module
 
 
 # ---------------------------------------------------------------------------

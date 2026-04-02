@@ -1,6 +1,20 @@
+from datetime import datetime as dt, timezone
 from typing import Dict, Any
+
 from app.client import BookingClient
 from app.config import app_config
+
+
+def normalize_datetime(dt_str: str) -> str:
+    """
+    Normalizes a datetime string to UTC format: YYYY-MM-DDTHH:MM:00+00:00
+    """
+    try:
+        d = dt.fromisoformat(dt_str.replace('Z', '+00:00'))
+        d_utc = d.astimezone(timezone.utc)
+        return d_utc.strftime('%Y-%m-%dT%H:%M:00+00:00')
+    except Exception:
+        return dt_str
 
 def get_server_time(client: BookingClient) -> Dict[str, Any]:
     """

@@ -11,8 +11,8 @@ from datetime import datetime, timezone, timedelta
 from unittest.mock import MagicMock, patch
 from freezegun import freeze_time
 
-import app.scheduler as sched_module
-from app.scheduler import get_synced_now, run_due_process
+import app.services.scheduler as sched_module
+from app.services.scheduler import get_synced_now, run_due_process
 from app.rules import BookingRule, BookingConfig, SchedulingRules
 
 
@@ -103,7 +103,7 @@ class TestGetSyncedNow:
             else:
                 return local_now + timedelta(milliseconds=200)  # after response (200ms RTT)
 
-        with patch("app.scheduler.dt") as mock_dt:
+        with patch("app.services.scheduler.dt") as mock_dt:
             mock_dt.now.side_effect = fake_now
             mock_dt.fromisoformat = datetime.fromisoformat
             with patch.object(sched_module, "get_server_time", return_value={"datetime": server_time}):
@@ -155,13 +155,14 @@ def run_due_with_mocks(
              patch.object(sched_module, "get_available_teachers", return_value=available_teachers), \
              patch.object(sched_module, "book_lesson", side_effect=book_results), \
              patch.object(sched_module, "acquire_lock", return_value=MagicMock()), \
-             patch.object(sched_module, "release_lock"):
+             patch.object(sched_module, "release_lock"), \
+             patch.object(sched_module, "is_token_expired", return_value=False):
 
             # Patch time.sleep to advance frozen time instead of sleeping
             def advance_time(seconds):
                 frozen.tick(timedelta(seconds=seconds))
 
-            with patch("app.scheduler.time.sleep", side_effect=advance_time):
+            with patch("app.services.scheduler.time.sleep", side_effect=advance_time):
                 run_due_process(verbose=verbose, force=force, force_soft=force_soft)
 
             return sched_module.book_lesson
@@ -652,13 +653,13 @@ class TestBookingsCacheUpdate:
                  patch.object(sched_module, "book_lesson",
                               return_value={"status": "success", "id": "9999"}) as book_fn, \
                  patch.object(sched_module, "acquire_lock", return_value=MagicMock()), \
-                 patch.object(sched_module, "release_lock"):
+                 patch.object(sched_module, "release_lock"), \
+                 patch.object(sched_module, "is_token_expired", return_value=False):
 
-                # Patch time.sleep to advance frozen time instead of sleeping
                 def advance_time(seconds):
                     frozen.tick(timedelta(seconds=seconds))
 
-                with patch("app.scheduler.time.sleep", side_effect=advance_time):
+                with patch("app.services.scheduler.time.sleep", side_effect=advance_time):
                     run_due_process()
 
         # book_lesson should only be called once — second rule sees the slot as taken

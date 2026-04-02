@@ -1,7 +1,7 @@
 import httpx
 
 from tests.base import BaseTest
-from app.booking import book_lesson, get_bookings, cancel_booking
+from app.api.booking import book_lesson, get_bookings, cancel_booking
 
 _AUTHED_TOKEN = "header.eyJleHAiOiA5OTk5OTk5OTk5fQ.sig"
 
