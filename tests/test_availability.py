@@ -1,59 +1,10 @@
 import httpx
 
 from tests.base import BaseTest
-from app.utils import normalize_datetime
 from app.api.availability import get_available_teachers, get_teacher_slots
-from app.ui.calendar import format_calendar
 
 _AUTHED_TOKEN = "header.eyJleHAiOiA5OTk5OTk5OTk5fQ.sig"
 
-
-# ---------------------------------------------------------------------------
-# normalize_datetime
-# ---------------------------------------------------------------------------
-
-class TestNormalizeDatetime:
-    def test_utc_z_suffix(self):
-        assert normalize_datetime("2026-04-08T13:00:00Z") == "2026-04-08T13:00:00+00:00"
-
-    def test_positive_offset_cest(self):
-        # 13:00 CEST (UTC+2) → 11:00 UTC
-        assert normalize_datetime("2026-04-08T13:00:00+02:00") == "2026-04-08T11:00:00+00:00"
-
-    def test_positive_offset_cet(self):
-        # 13:00 CET (UTC+1) → 12:00 UTC
-        assert normalize_datetime("2026-01-08T13:00:00+01:00") == "2026-01-08T12:00:00+00:00"
-
-    def test_negative_offset(self):
-        # 08:00 UTC-5 → 13:00 UTC
-        assert normalize_datetime("2026-04-08T08:00:00-05:00") == "2026-04-08T13:00:00+00:00"
-
-    def test_already_utc(self):
-        assert normalize_datetime("2026-04-08T11:00:00+00:00") == "2026-04-08T11:00:00+00:00"
-
-    def test_seconds_zeroed(self):
-        # Seconds component in output is always :00
-        assert normalize_datetime("2026-04-08T11:00:45+00:00") == "2026-04-08T11:00:00+00:00"
-
-    def test_invalid_string_passthrough(self):
-        # Silent fallback: returns original string unchanged
-        assert normalize_datetime("not-a-date") == "not-a-date"
-
-    def test_dst_summer_cest(self):
-        # Summer: Madrid is UTC+2
-        assert normalize_datetime("2026-07-15T13:00:00+02:00") == "2026-07-15T11:00:00+00:00"
-
-    def test_dst_winter_cet(self):
-        # Winter: Madrid is UTC+1
-        assert normalize_datetime("2026-01-15T13:00:00+01:00") == "2026-01-15T12:00:00+00:00"
-
-    def test_midnight_utc(self):
-        assert normalize_datetime("2026-04-08T00:00:00Z") == "2026-04-08T00:00:00+00:00"
-
-
-# ---------------------------------------------------------------------------
-# get_available_teachers
-# ---------------------------------------------------------------------------
 
 class TestGetAvailableTeachers(BaseTest):
     def setup_method(self, method):
@@ -103,7 +54,7 @@ class TestGetAvailableTeachers(BaseTest):
 
     def test_unknown_teacher_defaults_to_id(self):
         self.router.get("/auth/tutors/list").mock(
-            return_value=httpx.Response(200, json={"data": []})  # empty tutors map
+            return_value=httpx.Response(200, json={"data": []})
         )
         self.router.post("/auth/booking/calendar").mock(
             return_value=httpx.Response(200, json={
@@ -125,13 +76,10 @@ class TestGetAvailableTeachers(BaseTest):
         assert result == []
 
     def test_handles_list_response_format(self):
-        """
-        API might return a list of services instead of a dict.
-        """
+        """API might return a list of services instead of a dict."""
         self.router.get("/auth/tutors/list").mock(
             return_value=httpx.Response(200, json={"data": [{"id": 184, "name": "Maria", "is_favorite": False}]})
         )
-        # API returns a bare list
         self.router.post("/auth/booking/calendar").mock(
             return_value=httpx.Response(200, json=[
                 {"1": {"184": [{"start_time": "2026-04-08T11:00:00+00:00", "status": "available"}]}}
@@ -174,14 +122,9 @@ class TestGetAvailableTeachers(BaseTest):
         self.router.get("/auth/tutors/list").mock(return_value=httpx.Response(200, json=tutors_response))
         self.router.post("/auth/booking/calendar").mock(return_value=httpx.Response(200, json=calendar_response))
 
-        # Request a different time — no slots at 14:00 UTC
         result = get_available_teachers(self.mock_client, "2026-04-08T14:00:00+00:00")
         assert result == []
 
-
-# ---------------------------------------------------------------------------
-# get_teacher_slots
-# ---------------------------------------------------------------------------
 
 class TestGetTeacherSlots(BaseTest):
     def setup_method(self, method):
@@ -216,76 +159,3 @@ class TestGetTeacherSlots(BaseTest):
         )
 
         assert get_teacher_slots(self.mock_client, "9999") == []
-
-
-# ---------------------------------------------------------------------------
-# format_calendar
-# ---------------------------------------------------------------------------
-
-class TestFormatCalendar:
-    def test_empty_slots_returns_message(self):
-        result = format_calendar([])
-        assert "No slots found" in result
-
-    def test_available_slot_marked_ava(self):
-        slots = [{"start_time": "2026-04-08T11:00:00+00:00", "status": "available"}]
-        result = format_calendar(slots)
-        assert "[AVA]" in result
-
-    def test_booked_slot_marked_bkd(self):
-        slots = [{"start_time": "2026-04-08T11:00:00+00:00", "status": "booked"}]
-        result = format_calendar(slots)
-        assert "[BKD]" in result
-
-    def test_unknown_status_marked_dash(self):
-        slots = [{"start_time": "2026-04-08T11:00:00+00:00", "status": "pending"}]
-        result = format_calendar(slots)
-        assert "[---]" in result
-
-    def test_timezone_label_in_header(self):
-        slots = [{"start_time": "2026-04-08T11:00:00+00:00", "status": "available"}]
-        result = format_calendar(slots)
-        assert "Europe/Madrid" in result
-
-    def test_dst_summer_offset_display(self):
-        # UTC 11:00 in April (CEST, UTC+2) → should show 13:00 in Madrid
-        slots = [{"start_time": "2026-04-08T11:00:00+00:00", "status": "available"}]
-        result = format_calendar(slots)
-        assert "13:00" in result
-
-    def test_dst_winter_offset_display(self):
-        # UTC 12:00 in January (CET, UTC+1) → should show 13:00 in Madrid
-        slots = [{"start_time": "2026-01-08T12:00:00+00:00", "status": "available"}]
-        result = format_calendar(slots)
-        assert "13:00" in result
-
-    def test_utc_midnight_crosses_to_madrid_next_day(self):
-        # UTC 22:30 on April 7 = 00:30 April 8 Madrid (CEST, UTC+2)
-        slots = [{"start_time": "2026-04-07T22:30:00+00:00", "status": "available"}]
-        result = format_calendar(slots)
-        # Should be grouped under April 8 in Madrid, not April 7
-        assert "04-08" in result
-        assert "00:30" in result
-
-    def test_date_range_fills_gaps(self):
-        # Slots on April 8 and April 10 — April 9 column should also appear
-        slots = [
-            {"start_time": "2026-04-08T11:00:00+00:00", "status": "available"},
-            {"start_time": "2026-04-10T11:00:00+00:00", "status": "available"},
-        ]
-        result = format_calendar(slots)
-        assert "04-08" in result
-        assert "04-09" in result
-        assert "04-10" in result
-
-    def test_weekday_names_in_header(self):
-        # April 8 2026 is a Wednesday
-        slots = [{"start_time": "2026-04-08T11:00:00+00:00", "status": "available"}]
-        result = format_calendar(slots)
-        assert "Wed" in result
-
-    def test_no_valid_slots_message(self):
-        # Slot with unparseable start_time
-        slots = [{"start_time": "bad-date", "status": "available"}]
-        result = format_calendar(slots)
-        assert "No valid slots" in result

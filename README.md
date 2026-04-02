@@ -1,6 +1,6 @@
-# Spanish Class Booking Automation — Prototype
+# Spanish Class Booking Automation
 
-Small Python CLI tool that automates Spanish class booking by calling the booking platform's backend APIs directly.
+Python CLI tool that automates Spanish class booking by calling the booking platform's backend APIs directly.
 
 ## Setup
 
@@ -15,6 +15,7 @@ Small Python CLI tool that automates Spanish class booking by calling the bookin
     LOGIN_PASSWORD=your_password
     ```
 4.  Configure `config.yaml` if needed (defaults provided for worldsacross.com).
+5.  Configure `scheduling_rules.yml` with your desired lesson schedule.
 
 ## Usage
 
