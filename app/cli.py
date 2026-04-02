@@ -1,7 +1,7 @@
 import typer
 from app.client import BookingClient
 from app.config import app_config
-from app.auth import login, get_cached_token, is_token_expired
+from app.auth import login, get_cached_token
 from app.availability import get_available_teachers, get_teacher_slots, format_calendar, get_tutors_map
 from app.booking import book_lesson, get_bookings, cancel_booking
 from app.utils import get_server_time

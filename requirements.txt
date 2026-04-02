@@ -13,3 +13,5 @@ pytest-socket
 respx
 freezegun
 pytest-cov
+ruff
+pre-commit

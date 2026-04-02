@@ -1,4 +1,3 @@
-import pytest
 import httpx
 
 from tests.base import BaseTest

@@ -4,9 +4,8 @@ import time
 import fcntl
 import pytz
 from datetime import datetime as dt, timedelta, timezone
-from typing import List, Dict, Any, Optional
 
-from app.rules import load_scheduling_rules, BookingRule
+from app.rules import load_scheduling_rules
 from app.config import app_config, settings
 from app.client import BookingClient
 from app.auth import login, is_token_expired
@@ -33,7 +32,7 @@ def release_lock(f):
         f.close()
         try:
             os.remove(LOCK_FILE)
-        except:
+        except OSError:
             pass
 
 def get_synced_now(client: BookingClient) -> tuple[dt, float]:
@@ -169,12 +168,12 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
             minutes, seconds = divmod(remainder, 60)
             time_str = f"{hours}h {minutes}m {seconds}s" if hours > 0 else f"{minutes}m {seconds}s"
 
-            print(f"--- UPCOMING RULE INFO ---")
+            print("--- UPCOMING RULE INFO ---")
             print(f"Next rule: {next_rule.id}")
             print(f"Lesson time: {next_lesson_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})")
             print(f"Booking opens at: {next_open_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})")
             print(f"Time until booking opens: {time_str}")
-            print(f"--------------------------")
+            print("--------------------------")
 
         if not due_rules:
             if not verbose:
@@ -202,10 +201,10 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
             target_date_str = target_dt.strftime("%Y-%m-%d")
             target_start_time_str = target_dt.strftime("%H:%M:00")
             
-            print(f"\n==================================================")
+            print("\n==================================================")
             print(f"--- Processing Rule: {rule.id} ---")
             print(f"Target: {target_date_str} {target_start_time_str} ({rules_data.timezone})")
-            print(f"==================================================")
+            print("==================================================")
 
             # Check if already booked
             already_booked = False
@@ -215,7 +214,7 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
                     break
             
             if already_booked:
-                print(f"Status: Already booked. Skipping.")
+                print("Status: Already booked. Skipping.")
                 continue
 
             # Fetch availability
@@ -243,7 +242,7 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
                 candidates = available_teachers
             
             if not candidates:
-                print(f"Status: No suitable teachers available. Skipping.")
+                print("Status: No suitable teachers available. Skipping.")
                 continue
 
             print()
@@ -262,7 +261,7 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
                     print(f"Removed {cand['name']} ({tid}): 60m Limit reached {target_date_str}.")
 
             if not final_candidates:
-                print(f"Status: All preferred teachers reached daily limit. Skipping.")
+                print("Status: All preferred teachers reached daily limit. Skipping.")
                 continue
 
             # Priority for adjacent slot

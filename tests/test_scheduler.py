@@ -7,17 +7,12 @@ Strategy:
   internal functions (login, get_bookings, get_available_teachers, book_lesson)
   so we test the orchestration logic without real I/O
 """
-import os
-import time
-import pytest
-import httpx
 from datetime import datetime, timezone, timedelta
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 from freezegun import freeze_time
 
 import app.scheduler as sched_module
 from app.scheduler import get_synced_now, run_due_process
-from app.client import BookingClient
 from app.rules import BookingRule, BookingConfig, SchedulingRules
 
 
@@ -100,7 +95,6 @@ class TestGetSyncedNow:
         server_time = "2026-04-08 11:00:00"  # Same as local
 
         call_count = [0]
-        original_now = datetime.now
 
         def fake_now(tz=None):
             call_count[0] += 1
@@ -146,8 +140,6 @@ def run_due_with_mocks(
         existing_bookings = []
     if book_results is None:
         book_results = [{"status": "success", "id": "9999"}]
-
-    server_time = frozen_time.replace("T", " ").split("+")[0]
 
     with freeze_time(frozen_time) as frozen:
         # We also need to patch get_synced_now to return an advancing time 
@@ -267,7 +259,6 @@ class TestRuleEvaluation:
 
         # March 23 is in CET (UTC+1), so 12:30 Madrid = 11:30 UTC
         expected_utc = datetime(2026, 3, 23, 11, 30, 0, tzinfo=timezone.utc)
-        actual_utc = booking_open.astimezone(timezone.utc)
         # Fix: need to re-localize to get correct offset for the result of timedelta
         booking_open_fixed = local_tz.localize(booking_open.replace(tzinfo=None))
         actual_utc_fixed = booking_open_fixed.astimezone(timezone.utc)
@@ -618,7 +609,6 @@ class TestBookingsCacheUpdate:
         the new booking in approved_bookings and skips.
         """
         # Two rules on the same day — both become due simultaneously
-        target_date = "2026-04-15"
         rules = SchedulingRules(
             timezone="Europe/Madrid",
             booking=BookingConfig(
@@ -651,7 +641,6 @@ class TestBookingsCacheUpdate:
             make_available("159", "Carlos Lopez"),
         ]
 
-        server_time = "2026-04-08 10:29:00"
         frozen_time = "2026-04-08T10:29:00+00:00"
 
         with freeze_time(frozen_time) as frozen:

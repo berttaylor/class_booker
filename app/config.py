@@ -1,5 +1,4 @@
 import yaml
-import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import BaseModel
 from pathlib import Path

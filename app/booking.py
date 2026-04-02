@@ -57,9 +57,6 @@ def book_lesson(client: BookingClient, teacher_id: str, lesson_datetime: str) ->
         # 3. Get Madrid time for the main display and payload
         start_madrid = start_dt.astimezone(local_tz)
         
-        # 4. Calculate end time (30 minutes later)
-        end_madrid = start_madrid + timedelta(minutes=30)
-        
         # Print process confirmation
         print(f"Booking class for {start_madrid.strftime('%H:%M')} Spain time ({start_utc.strftime('%H:%M')} UTC)")
         

@@ -8,7 +8,6 @@ os.environ.setdefault("LOGIN_EMAIL", "test@example.com")
 os.environ.setdefault("LOGIN_PASSWORD", "test-password-123")
 
 import pytest
-import httpx
 import respx
 
 from app.client import BookingClient

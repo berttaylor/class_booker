@@ -1,4 +1,3 @@
-from datetime import datetime as dt, timezone
 from typing import Dict, Any
 from app.client import BookingClient
 from app.config import app_config

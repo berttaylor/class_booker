@@ -1,7 +1,12 @@
+from collections import defaultdict
 from datetime import datetime as dt, timezone, timedelta
+from typing import Any, Dict
+
 import pytz
+
 from app.client import BookingClient
 from app.config import app_config
+
 
 def normalize_datetime(dt_str: str) -> str:
     """
@@ -17,8 +22,6 @@ def normalize_datetime(dt_str: str) -> str:
     except Exception:
         return dt_str
 
-from collections import defaultdict
-from typing import Dict, Optional, Any
 
 def get_tutors_map(client: BookingClient) -> Dict[str, Dict[str, Any]]:
     """

@@ -1,8 +1,6 @@
 import json
 import time
-import pytest
 import httpx
-import respx
 
 from tests.conftest import make_jwt
 from tests.base import BaseTest

@@ -1,5 +1,4 @@
 import httpx
-from typing import Any, Dict
 
 class BookingClient:
     def __init__(self, base_url: str):
