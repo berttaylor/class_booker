@@ -196,10 +196,10 @@ def get_available_teachers(client: BookingClient, lesson_datetime: str) -> list:
         res_json = response.json()
         
         # The structure is a dict with service IDs as strings
-        service_data = res_json.get("1", {})
-        
-        # If it's a list, try to find the service "1"
-        if not service_data and isinstance(res_json, list):
+        service_data = {}
+        if isinstance(res_json, dict):
+            service_data = res_json.get("1", {})
+        elif isinstance(res_json, list):
             for item in res_json:
                 if isinstance(item, dict) and "1" in item:
                     service_data = item["1"]

@@ -5,3 +5,11 @@ PyYAML
 pydantic
 pydantic-settings
 pytz
+
+# Dev / test dependencies
+pytest
+pytest-mock
+pytest-socket
+respx
+freezegun
+pytest-cov

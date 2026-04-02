@@ -19,7 +19,7 @@ class AppConfig(BaseModel):
     tutors_list_endpoint: str
 
 class Settings(BaseSettings):
-    config_path: Path = Path("config.yaml")
+    config_path: Path = Path(__file__).parent.parent / "config.yaml"
     
     # Secrets from .env
     login_email: str | None = None

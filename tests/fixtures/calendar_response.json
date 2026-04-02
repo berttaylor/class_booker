@@ -1,0 +1,16 @@
+{
+  "1": {
+    "184": [
+      {"start_time": "2026-04-08T11:00:00+00:00", "status": "available"},
+      {"start_time": "2026-04-08T11:30:00+00:00", "status": "booked"},
+      {"start_time": "2026-04-09T11:00:00+00:00", "status": "available"}
+    ],
+    "159": [
+      {"start_time": "2026-04-08T11:00:00+00:00", "status": "available"},
+      {"start_time": "2026-04-08T16:00:00+00:00", "status": "available"}
+    ],
+    "12": [
+      {"start_time": "2026-04-08T11:30:00+00:00", "status": "available"}
+    ]
+  }
+}

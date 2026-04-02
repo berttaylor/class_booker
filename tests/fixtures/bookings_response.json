@@ -1,0 +1,32 @@
+{
+  "status": "success",
+  "data": [
+    {
+      "id": "1001",
+      "staff_id": "184",
+      "date": "2026-04-08",
+      "start_time": "11:00:00",
+      "staff": {"first_name": "Maria", "last_name": "Garcia"},
+      "status": "approved",
+      "past": false
+    },
+    {
+      "id": "1002",
+      "staff_id": "159",
+      "date": "2026-04-09",
+      "start_time": "11:00:00",
+      "staff": {"first_name": "Carlos", "last_name": "Lopez"},
+      "status": "approved",
+      "past": false
+    },
+    {
+      "id": "900",
+      "staff_id": "184",
+      "date": "2026-03-01",
+      "start_time": "11:00:00",
+      "staff": {"first_name": "Maria", "last_name": "Garcia"},
+      "status": "approved",
+      "past": true
+    }
+  ]
+}

@@ -128,6 +128,8 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
                 
                 booking_open_dt = lesson_dt - timedelta(days=rules_data.booking.open_offset_days, 
                                                         minutes=rules_data.booking.open_offset_minutes)
+                # Ensure the offset is correct for the new date (DST transitions)
+                booking_open_dt = local_tz.localize(booking_open_dt.replace(tzinfo=None))
                 
                 # Filter out those that already passed
                 if booking_open_dt < now_local:
