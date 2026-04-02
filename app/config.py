@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # Secrets from .env
     login_email: str | None = None
     login_password: str | None = None
+
+    # Pushover notifications (optional)
+    pushover_user_key: str | None = None
+    pushover_api_token: str | None = None
     
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

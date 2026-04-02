@@ -6,6 +6,7 @@ import pytz
 from datetime import datetime as dt, timedelta, timezone
 
 from app.api.auth import login, is_token_expired
+from app.notifications import send_push
 from app.api.availability import get_available_teachers
 from app.api.booking import get_bookings, book_lesson
 from app.client import BookingClient
@@ -168,7 +169,8 @@ def _get_candidates(rule, available_teachers, approved_bookings, target_date_str
       2. Fall back to all available teachers if allow_fallbacks is set
       3. Filter out teachers who have reached the 60-min daily limit
       4. Promote the teacher from the adjacent preceding slot to the front
-    Returns the final ordered candidate list (may be empty).
+    Returns (candidates, used_fallback) where used_fallback is True if no
+    preferred teachers were available and fallback teachers are being used.
     """
     available_teacher_ids = [str(t["id"]) for t in available_teachers]
 
@@ -182,12 +184,14 @@ def _get_candidates(rule, available_teachers, approved_bookings, target_date_str
     candidate_info = ", ".join([f"{c['name']} ({c['id']})" for c in candidates])
     print(f"Preferred teachers available: {candidate_info}")
 
+    used_fallback = False
     if not candidates and rule.allow_fallbacks:
         print("No preferred teachers available. Fallback is ENABLED. Considering all available teachers...")
         candidates = available_teachers
+        used_fallback = True
 
     if not candidates:
-        return []
+        return [], False
 
     # Daily 60-min limit filter
     print()
@@ -220,7 +224,7 @@ def _get_candidates(rule, available_teachers, approved_bookings, target_date_str
             final_candidates.insert(0, prev_cand)
             print(f"Prioritized: {prev_cand['name']} ({prev_teacher}) (taught previous adjacent slot).")
 
-    return final_candidates
+    return final_candidates, used_fallback
 
 
 def _wait_for_window(booking_open_dt, now_local, local_tz, client):
@@ -253,7 +257,7 @@ def _wait_for_window(booking_open_dt, now_local, local_tz, client):
     print("\nWindow OPEN! Attempting booking...")
 
 
-def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_bookings, target_date_str, target_start_time_str) -> bool:
+def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_bookings, target_date_str, target_start_time_str, used_fallback=False) -> bool:
     """
     Iterates candidates and attempts to book the lesson.
     Returns True on first success. Mutates approved_bookings on success.
@@ -283,6 +287,10 @@ def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_b
 
             if res.get("status") == "success":
                 print(f"SUCCESS! Booked Teacher {tname} ({tid}).")
+                msg = f"Booked {tname} for {target_date_str} at {target_start_time_str}"
+                if used_fallback:
+                    msg += " (fallback — preferred teachers unavailable)"
+                send_push(msg, priority=-1)
                 approved_bookings.append({
                     "staff_id": tid,
                     "date": target_date_str,
@@ -329,6 +337,7 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
         token = login(client)
         if not token:
             print("Authentication: FAILURE. Check your credentials.")
+            send_push("Authentication failed — check credentials in .env", priority=1)
             return
         print("Authentication: SUCCESS.")
         client.set_token(token)
@@ -383,9 +392,10 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
             available_info = ", ".join([f"{t['name']} ({t['id']})" for t in available_teachers])
             print(f"Teachers available at this slot: {available_info}")
 
-            candidates = _get_candidates(rule, available_teachers, approved_bookings, target_date_str, target_dt)
+            candidates, used_fallback = _get_candidates(rule, available_teachers, approved_bookings, target_date_str, target_dt)
             if not candidates:
                 print("Status: No suitable teachers available. Skipping.")
+                send_push(f"No teachers available for {rule.id} on {target_date_str} at {target_start_time_str}", priority=1)
                 continue
 
             candidate_order = ", ".join([f"{c['name']} ({c['id']})" for c in candidates])
@@ -402,13 +412,16 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
                     print("Re-authentication successful.")
                 else:
                     print("Re-authentication FAILED. Booking might fail.")
+                    send_push(f"Token refresh failed before booking {rule.id} — booking may fail", priority=1)
 
             success = _attempt_booking(
                 client, candidates, target_slot_iso, force_soft,
                 approved_bookings, target_date_str, target_start_time_str,
+                used_fallback=used_fallback,
             )
             if not success:
                 print(f"All booking attempts failed for rule {rule.id}.")
+                send_push(f"Could not book {rule.id} on {target_date_str} at {target_start_time_str} — all teachers failed", priority=1)
 
         print("\nBooking process completed.")
 
