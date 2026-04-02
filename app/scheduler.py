@@ -286,7 +286,7 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
 
             wait_seconds = (booking_open_dt - now_local).total_seconds()
             if wait_seconds > 0:
-                print(f"Waiting {wait_seconds:.2f}s for booking window to open at {booking_open_dt.strftime('%H:%M:%S')}...")
+                print(f"Waiting for booking window to open at {booking_open_dt.strftime('%H:%M:%S')}...")
                 # Simple countdown for visibility
                 try:
                     while wait_seconds > 0.1:
