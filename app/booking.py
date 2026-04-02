@@ -64,13 +64,17 @@ def book_lesson(client: BookingClient, teacher_id: str, lesson_datetime: str) ->
         print(f"Booking class for {start_madrid.strftime('%H:%M')} Spain time ({start_utc.strftime('%H:%M')} UTC)")
         
         # 5. Prepare Payload
-        # Example: {"service_id":1,"staff_id":"81","date":"2026-04-08","start_time":"18:30","end_time":"19:00","number_of_people":1,"status":"approved","timezone":"Europe/Madrid","group_session_id":null,"type_of_class":"let_tutor_decide"}
+        # The backend expects UTC for start_time and end_time, despite the timezone field.
+        # Website example: Madrid 13:00 -> UTC 11:00
+        start_utc_time = start_utc.strftime("%H:%M")
+        end_utc_time = (start_utc + timedelta(minutes=30)).strftime("%H:%M")
+
         payload = {
             "service_id": 1,
             "staff_id": str(teacher_id),
             "date": start_madrid.strftime("%Y-%m-%d"),
-            "start_time": start_madrid.strftime("%H:%M"),
-            "end_time": end_madrid.strftime("%H:%M"),
+            "start_time": start_utc_time,
+            "end_time": end_utc_time,
             "number_of_people": 1,
             "status": "approved",
             "timezone": app_config.timezone,

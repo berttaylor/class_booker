@@ -222,7 +222,7 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
             available_info = ", ".join([f"{t['name']} ({t['id']})" for t in available_teachers])
             available_teacher_ids = [str(t["id"]) for t in available_teachers]
             print(f"Teachers available at this slot: {available_info}")
-            
+
             # Build candidate list from rule teacher_ids (intersect with available)
             candidates = []
             for tid in rule.teacher_ids:
@@ -232,6 +232,7 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
                     candidates.append(t_info)
             
             candidate_info = ", ".join([f"{c['name']} ({c['id']})" for c in candidates])
+            print()
             print(f"Preferred teachers available: {candidate_info}")
             
             # If no preferred teachers and fallback is allowed, consider all other available teachers
@@ -242,7 +243,8 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
             if not candidates:
                 print(f"Status: No suitable teachers available. Skipping.")
                 continue
-            
+
+            print()
             # Filter candidates by 60min daily limit
             final_candidates = []
             for cand in candidates:
@@ -255,7 +257,7 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
                 if booked_minutes < 60:
                     final_candidates.append(cand)
                 else:
-                    print(f"Teacher {cand['name']} ({tid}): Limit reached (60m already booked on {target_date_str}).")
+                    print(f"Removed {cand['name']} ({tid}): 60m Limit reached {target_date_str}.")
 
             if not final_candidates:
                 print(f"Status: All preferred teachers reached daily limit. Skipping.")
@@ -275,16 +277,11 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
                     # Move to front
                     final_candidates.remove(prev_cand)
                     final_candidates.insert(0, prev_cand)
-                    print(f"Teacher {prev_cand['name']} ({prev_teacher}): Prioritized (taught previous adjacent slot).")
+                    print(f"Prioritized : {prev_cand['name']} ({prev_teacher}): (taught previous adjacent slot).")
 
             final_candidate_info = ", ".join([f"{c['name']} ({c['id']})" for c in final_candidates])
             print(f"Final candidate order: {final_candidate_info}")
 
-            # 3. Wait until exact booking open time
-            # Re-sync time just before waiting to be as accurate as possible
-            now_utc, _ = get_synced_now(client)
-            now_local = now_utc.astimezone(local_tz)
-            
             wait_seconds = (booking_open_dt - now_local).total_seconds()
             if wait_seconds > 0:
                 print(f"Waiting {wait_seconds:.2f}s for booking window to open at {booking_open_dt.strftime('%H:%M:%S')}...")
@@ -312,7 +309,7 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
                 
                 # Ensure we are over the mark
                 if wait_seconds > 0:
-                    time.sleep(wait_seconds + 0.05)
+                    time.sleep(wait_seconds + 0.1) # Increased buffer slightly
                 print("\nWindow OPEN! Attempting booking...")
 
             # 4. Final Token Check
@@ -337,32 +334,47 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
                     continue
 
                 print(f"Attempting Teacher {tname} ({tid})...")
-                res = book_lesson(client, tid, target_slot_iso)
                 
-                # If the booking failed with what looks like an auth error, try once with fresh login
-                if res.get("status") == "error" and ("Unauthorized" in str(res.get("message")) or "401" in str(res.get("message"))):
-                    print(f"Token rejected for Teacher {tname} ({tid}). Retrying with fresh login...")
-                    token = login(client, use_cache=False)
-                    if token:
-                        client.set_token(token)
-                        res = book_lesson(client, tid, target_slot_iso)
+                # Retry logic for "too early" error
+                max_retries = 3
+                for attempt in range(max_retries):
+                    res = book_lesson(client, tid, target_slot_iso)
+                    
+                    # If the booking failed with what looks like an auth error, try once with fresh login
+                    if res.get("status") == "error" and ("Unauthorized" in str(res.get("message")) or "401" in str(res.get("message"))):
+                        print(f"Token rejected for Teacher {tname} ({tid}). Retrying with fresh login...")
+                        token = login(client, use_cache=False)
+                        if token:
+                            client.set_token(token)
+                            res = book_lesson(client, tid, target_slot_iso)
 
-                if res.get("status") == "success":
-                    print(f"SUCCESS! Booked Teacher {tname} ({tid}).")
-                    success = True
-                    # Update local bookings list so subsequent rules know about this booking
-                    approved_bookings.append({
-                        "staff_id": tid,
-                        "date": target_date_str,
-                        "start_time": target_start_time_str,
-                        "status": "approved"
-                    })
-                    break
-                else:
-                    print(f"Failed for Teacher {tname} ({tid}): {res.get('message')}")
-            
-            if not success:
-                print(f"All booking attempts failed for rule {rule.id}.")
+                    if res.get("status") == "success":
+                        print(f"SUCCESS! Booked Teacher {tname} ({tid}).")
+                        success = True
+                        # Update local bookings list so subsequent rules know about this booking
+                        approved_bookings.append({
+                            "staff_id": tid,
+                            "date": target_date_str,
+                            "start_time": target_start_time_str,
+                            "status": "approved"
+                        })
+                        break
+                    else:
+                        error_msg = str(res.get('message', ''))
+                        # "La fecha de la clase solicitada excede el límite de agendamiento."
+                        if "excede el" in error_msg and "agendamiento" in error_msg:
+                            if attempt < max_retries - 1:
+                                print(f"Booking window not yet open according to server. Retrying in 2s... (Attempt {attempt+1}/{max_retries})")
+                                time.sleep(2)
+                                continue
+                        
+                        print(f"Failed for Teacher {tname} ({tid}): {error_msg}")
+                        break # Go to next teacher if not a timing error
+                
+                if not success:
+                    print(f"All booking attempts failed for rule {rule.id}.")
+
+            print("\nBooking process completed.")
 
     finally:
         client.close()
