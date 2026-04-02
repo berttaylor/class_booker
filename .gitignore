@@ -156,3 +156,10 @@ cython_debug/
 
 #Run lock
 .run_due.lock
+
+# Logs
+logs/
+
+# User level stuff
+scheduling_rules.yml
+*.classbooker.plist

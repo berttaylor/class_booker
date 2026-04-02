@@ -30,7 +30,7 @@ This is a Python CLI tool (Typer) that automates booking Spanish classes on worl
 ```
 app/
   client.py          — BookingClient: thin httpx wrapper (shared by everything)
-  config.py          — AppConfig (from config.yaml), Settings (from .env), API_BASE_URL constant
+  config.py          — AppConfig (from config.yaml), Settings (from .env)
   rules.py           — Pydantic models for scheduling_rules.yml
   utils.py           — normalize_datetime(), get_server_time()
   cli.py             — Typer commands (thin: no business logic)
@@ -53,9 +53,8 @@ app/
 - `config.yaml` — API base URL and endpoint paths → `AppConfig` via `app/config.py`
 - `.env` — login credentials (`LOGIN_EMAIL`, `LOGIN_PASSWORD`) → `Settings`
 - `scheduling_rules.yml` — automated booking rules → `SchedulingRules` via `app/rules.py`
-- `app/config.py` also exports `API_BASE_URL` as a Python constant (used by tests)
 
-**Scheduler** (`services/scheduler.py` → `run_due_process`): evaluates all enabled rules from `scheduling_rules.yml`, calculates when each lesson's booking window opens (lesson time minus `open_offset_days`/`open_offset_minutes`), syncs with server time to correct for clock drift, then books the lesson when within `precheck_lead_seconds` of the window opening. The main function is ~60 lines delegating to private helpers (`_evaluate_rules`, `_get_candidates`, `_wait_for_window`, `_attempt_booking`, etc.). Uses a file lock (`.run_due.lock`) to prevent concurrent runs.
+**Scheduler** (`services/scheduler.py` → `run_due_process`): evaluates all enabled rules from `scheduling_rules.yml`, calculates when each lesson's booking window opens (lesson time minus `open_offset_days`/`open_offset_minutes`), syncs with server time to correct for clock drift, then books the lesson when within `precheck_lead_seconds` of the window opening. The main function is ~60 lines delegating to private helpers (`_evaluate_rules`, `_get_candidates`, `_wait_for_window`, `_attempt_booking`, etc.).
 
 ## Testing
 

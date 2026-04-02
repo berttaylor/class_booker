@@ -6,8 +6,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-API_BASE_URL: str = "https://api.worldsacross.com/api"
-
 class AppConfig(BaseModel):
     base_url: str
     timezone: str
