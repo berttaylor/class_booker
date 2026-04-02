@@ -371,8 +371,11 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
                         print(f"Failed for Teacher {tname} ({tid}): {error_msg}")
                         break # Go to next teacher if not a timing error
                 
-                if not success:
-                    print(f"All booking attempts failed for rule {rule.id}.")
+                if success:
+                    break # Success! Don't attempt other teachers for this rule
+            
+            if not success:
+                print(f"All booking attempts failed for rule {rule.id}.")
 
             print("\nBooking process completed.")
 
