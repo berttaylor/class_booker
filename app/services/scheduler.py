@@ -129,8 +129,6 @@ def _apply_force_flag(actual_force, force_soft, due_rules, all_upcoming_rules, r
     if actual_force and not due_rules and all_upcoming_rules:
         all_upcoming_rules.sort(key=lambda x: x[0])
         next_open_dt, next_rule, next_lesson_dt = all_upcoming_rules[0]
-        label = "Soft force" if force_soft else "Force"
-        print(f"{label} flag active. Forcing next rule: {next_rule.id}")
         due_rules.append(next_rule)
         rule_lesson_times[next_rule.id] = next_lesson_dt.isoformat()
         rule_open_times[next_rule.id] = next_open_dt
@@ -182,19 +180,19 @@ def _get_candidates(rule, available_teachers, approved_bookings, target_date_str
     ]
 
     candidate_info = ", ".join([f"{c['name']} ({c['id']})" for c in candidates])
-    print(f"Preferred teachers available: {candidate_info}")
 
     used_fallback = False
     if not candidates and rule.allow_fallbacks:
-        print("No preferred teachers available. Fallback is ENABLED. Considering all available teachers...")
+        print("  Preferred:   none — using fallback")
         candidates = available_teachers
         used_fallback = True
+    else:
+        print(f"  Preferred:   {candidate_info}")
 
     if not candidates:
         return [], False
 
     # Daily 60-min limit filter
-    print()
     final_candidates = []
     for cand in candidates:
         tid = str(cand["id"])
@@ -205,10 +203,10 @@ def _get_candidates(rule, available_teachers, approved_bookings, target_date_str
         if booked_minutes < 60:
             final_candidates.append(cand)
         else:
-            print(f"Removed {cand['name']} ({tid}): 60m limit reached on {target_date_str}.")
+            print(f"  Removed:     {cand['name']} ({tid}) — 60m limit")
 
     if not final_candidates:
-        return []
+        return [], False
 
     # Adjacency priority — promote teacher who taught the preceding 30-min slot
     prev_slot_start = (target_dt - timedelta(minutes=30)).strftime("%H:%M:00")
@@ -222,7 +220,7 @@ def _get_candidates(rule, available_teachers, approved_bookings, target_date_str
         if prev_cand:
             final_candidates.remove(prev_cand)
             final_candidates.insert(0, prev_cand)
-            print(f"Prioritized: {prev_cand['name']} ({prev_teacher}) (taught previous adjacent slot).")
+            print(f"  Prioritised: {prev_cand['name']} ({prev_teacher}) (adjacent slot)")
 
     return final_candidates, used_fallback
 
@@ -236,25 +234,25 @@ def _wait_for_window(booking_open_dt, now_local, local_tz, client):
     if wait_seconds <= 0:
         return
 
-    print(f"Waiting for booking window to open at {booking_open_dt.strftime('%H:%M:%S')}...")
+    print(f"  Waiting...   window opens {booking_open_dt.strftime('%H:%M:%S')}")
     try:
         while wait_seconds > 0.1:
             hours, remainder = divmod(int(wait_seconds), 3600)
             minutes, seconds = divmod(remainder, 60)
             time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-            sys.stdout.write(f"\r  T-minus: {time_str}... ")
+            sys.stdout.write(f"\r  T-minus:     {time_str} ")
             sys.stdout.flush()
             time.sleep(min(wait_seconds, 0.5))
             now_utc, _ = get_synced_now(client)
             now_local = now_utc.astimezone(local_tz)
             wait_seconds = (booking_open_dt - now_local).total_seconds()
     except KeyboardInterrupt:
-        print("\nWait interrupted by user.")
+        print("\n  Wait interrupted.")
         raise SystemExit(0)
 
     if wait_seconds > 0:
         time.sleep(wait_seconds + 0.1)
-    print("\nWindow OPEN! Attempting booking...")
+    print("\n  Window open! Booking...")
 
 
 def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_bookings, target_date_str, target_start_time_str, used_fallback=False) -> bool:
@@ -269,10 +267,10 @@ def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_b
         tname = cand["name"]
 
         if force_soft:
-            print(f"[DRY RUN] Would attempt Teacher {tname} ({tid}) for {target_slot_iso}")
+            print(f"  [DRY RUN]    {tname} ({tid}) for {target_slot_iso}")
             return True
 
-        print(f"Attempting Teacher {tname} ({tid})...")
+        print(f"  Attempting:  {tname} ({tid})")
 
         for attempt in range(max_retries):
             res = book_lesson(client, tid, target_slot_iso)
@@ -281,12 +279,12 @@ def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_b
             if res.get("status") == "error" and (
                 "Unauthorized" in str(res.get("message")) or "401" in str(res.get("message"))
             ):
-                print(f"Token rejected for Teacher {tname} ({tid}). Retrying with fresh login...")
+                print("  Re-auth:     token rejected, refreshing...")
                 ensure_fresh_token(client)
                 res = book_lesson(client, tid, target_slot_iso)
 
             if res.get("status") == "success":
-                print(f"SUCCESS! Booked Teacher {tname} ({tid}).")
+                print(f"  BOOKED:      {tname} ({tid})")
                 msg = f"Booked {tname} for {target_date_str} at {target_start_time_str}"
                 if used_fallback:
                     msg += " (fallback — preferred teachers unavailable)"
@@ -303,11 +301,11 @@ def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_b
             # Spanish API error: booking window not yet open
             if "excede el" in error_msg and "agendamiento" in error_msg:
                 if attempt < max_retries - 1:
-                    print(f"Booking window not yet open. Retrying in 2s... (Attempt {attempt + 1}/{max_retries})")
+                    print(f"  Retry {attempt + 1}/{max_retries}: window not open yet, waiting 2s...")
                     time.sleep(2)
                     continue
 
-            print(f"Failed for Teacher {tname} ({tid}): {error_msg}")
+            print(f"  Failed:      {tname} ({tid}): {error_msg}")
             break  # Move to next candidate
 
     return False
@@ -317,7 +315,7 @@ def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_b
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool = False):
+def run_due_process(force: bool = False, force_soft: bool = False):
     lock_f = acquire_lock()
     if not lock_f:
         print("Another instance is already running. Exiting.")
@@ -329,47 +327,53 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
         rules_data = load_scheduling_rules()
         local_tz = pytz.timezone(rules_data.timezone)
 
-        print("-" * 50)
-        print("INITIALIZING: Spanish Class Booking Automation")
-        print("-" * 50)
-
-        print(f"Checking authentication ({settings.login_email})...")
-        token = login(client)
-        if not token:
-            print("Authentication: FAILURE. Check your credentials.")
-            send_push("Authentication failed — check credentials in .env", priority=1)
-            return
-        print("Authentication: SUCCESS.")
-        client.set_token(token)
-
-        print("Syncing with server time...")
-        now_utc, drift = get_synced_now(client)
-        now_local = now_utc.astimezone(local_tz)
-        status_icon = "✓" if abs(drift) < 5 else "✗"
-        print(f"Current server time: {now_local.strftime('%Y-%m-%d %H:%M:%S')} ({rules_data.timezone})")
-        print(f"Server drift: {drift:+.3f}s {status_icon}")
-        print("-" * 50)
-
+        # Phase 1: local clock only — no API calls
+        now_local = dt.now(timezone.utc).astimezone(local_tz)
+        timestamp = now_local.strftime("%Y-%m-%d %H:%M:%S")
         due_rules, rule_lesson_times, rule_open_times, all_upcoming = _evaluate_rules(rules_data, now_local)
         _apply_force_flag(actual_force, force_soft, due_rules, all_upcoming, rule_lesson_times, rule_open_times)
 
-        if verbose and all_upcoming:
-            _print_verbose_upcoming(all_upcoming, now_local, rules_data)
-
         if not due_rules:
-            if not verbose:
-                print("Status: No rules are due for booking at this time.")
+            if all_upcoming:
+                all_upcoming.sort(key=lambda x: x[0])
+                next_open_dt, next_rule, next_lesson_dt = all_upcoming[0]
+                time_until = next_open_dt - now_local
+                total_seconds = int(time_until.total_seconds())
+                hours, remainder = divmod(total_seconds, 3600)
+                minutes, seconds = divmod(remainder, 60)
+                print(f"[{timestamp}] Nothing to book")
+                print(f"  Next window: {next_open_dt.strftime('%Y-%m-%d %H:%M')} (in {hours}h {minutes}m {seconds}s)")
+                print(f"  For class:   {next_lesson_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})")
+            else:
+                print(f"[{timestamp}] Nothing to book — no upcoming rules found.")
             return
 
-        print(f"Rules to process: {', '.join([r.id for r in due_rules])}")
-        print("Fetching current bookings...")
+        # Phase 2: something is due — authenticate and sync time
+        print(f"[{timestamp}] Booking due — processing {len(due_rules)} rule(s)")
+        token = login(client)
+        if not token:
+            print("  Auth:   FAILED — check credentials in .env")
+            send_push("Authentication failed — check credentials in .env", priority=1)
+            return
+        client.set_token(token)
+
+        now_utc, drift = get_synced_now(client)
+        now_local = now_utc.astimezone(local_tz)
+        drift_icon = "✓" if abs(drift) < 5 else "✗"
+        print(f"  Auth:   {settings.login_email} ✓  (drift: {drift:+.3f}s {drift_icon})")
+
+        # Re-evaluate with synced time for accurate wait calculations
+        due_rules, rule_lesson_times, rule_open_times, _ = _evaluate_rules(rules_data, now_local)
+        _apply_force_flag(actual_force, force_soft, due_rules, all_upcoming, rule_lesson_times, rule_open_times)
+
+        forced_label = " (forced)" if actual_force else ""
+        print(f"  Rules:  {', '.join([r.id for r in due_rules])}{forced_label}")
+
         bookings = get_bookings(client)
         approved_bookings = [
             b for b in bookings
             if b.get("status") == "approved" and not b.get("past")
         ]
-        print(f"Found {len(approved_bookings)} active future bookings.")
-        print("-" * 50)
 
         for rule in due_rules:
             target_slot_iso = rule_lesson_times[rule.id]
@@ -378,28 +382,24 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
             target_date_str = target_dt.strftime("%Y-%m-%d")
             target_start_time_str = target_dt.strftime("%H:%M:00")
 
-            print("\n==================================================")
-            print(f"--- Processing Rule: {rule.id} ---")
-            print(f"Target: {target_date_str} {target_start_time_str} ({rules_data.timezone})")
-            print("==================================================")
+            print(f"\n  [{rule.id}] {target_date_str} {target_start_time_str} ({rules_data.timezone})")
 
             if _is_already_booked(approved_bookings, target_date_str, target_start_time_str):
-                print("Status: Already booked. Skipping.")
+                print(f"  [{rule.id}] Already booked — skipping")
                 continue
 
-            print("Checking teacher availability...")
             available_teachers = get_available_teachers(client, target_slot_iso)
             available_info = ", ".join([f"{t['name']} ({t['id']})" for t in available_teachers])
-            print(f"Teachers available at this slot: {available_info}")
+            print(f"  Available:   {available_info}")
 
             candidates, used_fallback = _get_candidates(rule, available_teachers, approved_bookings, target_date_str, target_dt)
             if not candidates:
-                print("Status: No suitable teachers available. Skipping.")
+                print("  No suitable teachers available — skipping")
                 send_push(f"No teachers available for {rule.id} on {target_date_str} at {target_start_time_str}", priority=1)
                 continue
 
             candidate_order = ", ".join([f"{c['name']} ({c['id']})" for c in candidates])
-            print(f"Final candidate order: {candidate_order}")
+            print(f"  Candidates:  {candidate_order}")
 
             _wait_for_window(booking_open_dt, now_local, local_tz, client)
 
@@ -407,11 +407,11 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
                 client.client.headers.get("Authorization", "").replace("Bearer ", ""),
                 buffer_seconds=60,
             ):
-                print("Token expired or near-expiry. Re-authenticating...")
+                print("  Re-auth:     token near-expiry, refreshing...")
                 if ensure_fresh_token(client):
-                    print("Re-authentication successful.")
+                    print("  Re-auth:     success")
                 else:
-                    print("Re-authentication FAILED. Booking might fail.")
+                    print("  Re-auth:     FAILED — booking may fail")
                     send_push(f"Token refresh failed before booking {rule.id} — booking may fail", priority=1)
 
             success = _attempt_booking(
@@ -420,7 +420,7 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
                 used_fallback=used_fallback,
             )
             if not success:
-                print(f"All booking attempts failed for rule {rule.id}.")
+                print(f"  FAILED:      all teachers exhausted for {rule.id}")
                 send_push(f"Could not book {rule.id} on {target_date_str} at {target_start_time_str} — all teachers failed", priority=1)
 
         print("\nBooking process completed.")
@@ -428,3 +428,4 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
     finally:
         client.close()
         release_lock(lock_f)
+        print()

@@ -125,7 +125,6 @@ def run_due_with_mocks(
     available_teachers: list,
     existing_bookings: list = None,
     book_results: list = None,
-    verbose: bool = False,
     force: bool = False,
     force_soft: bool = False,
     token: str = "fake.token.here",
@@ -163,7 +162,7 @@ def run_due_with_mocks(
                 frozen.tick(timedelta(seconds=seconds))
 
             with patch("app.services.scheduler.time.sleep", side_effect=advance_time):
-                run_due_process(verbose=verbose, force=force, force_soft=force_soft)
+                run_due_process(force=force, force_soft=force_soft)
 
             return sched_module.book_lesson
 

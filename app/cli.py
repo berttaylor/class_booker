@@ -225,14 +225,13 @@ def server_time():
 
 @app.command(name="run-due")
 def run_due(
-    verbose: Annotated[bool, typer.Option("--verbose", help="Show verbose output about upcoming rules")] = False,
     force: Annotated[bool, typer.Option("--force", help="Force the next upcoming rule to be processed now")] = False,
     force_soft: Annotated[bool, typer.Option("--force-soft", help="Soft force: process everything but skip the final booking request")] = False
 ):
     """
     Checks for due bookings and performs them automatically.
     """
-    run_due_process(verbose=verbose, force=force, force_soft=force_soft)
+    run_due_process(force=force, force_soft=force_soft)
 
 
 @app.command(name="list-tutors")
