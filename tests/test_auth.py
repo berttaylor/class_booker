@@ -5,6 +5,7 @@ import httpx
 import respx
 
 from tests.conftest import make_jwt
+from tests.base import BaseTest
 from app.auth import is_token_expired, get_cached_token, _save_cached_token, login
 import app.auth as auth_module
 
@@ -111,68 +112,63 @@ class TestTokenCache:
 # login
 # ---------------------------------------------------------------------------
 
-class TestLogin:
-    def test_login_success(self, mock_client, tmp_path, monkeypatch):
-        client, router = mock_client
+class TestLogin(BaseTest):
+    def test_login_success(self, tmp_path, monkeypatch):
         monkeypatch.setattr(auth_module, "TOKEN_CACHE_FILE", tmp_path / ".token_cache.json")
         fresh_token = make_jwt(exp=int(time.time()) + 3600)
 
-        router.post("/auth/login").mock(
+        self.router.post("/auth/login").mock(
             return_value=httpx.Response(200, json={"status": "success", "access_token": fresh_token})
         )
 
-        result = login(client, use_cache=False)
+        result = login(self.mock_client, use_cache=False)
         assert result == fresh_token
 
-    def test_login_failure_bad_credentials(self, mock_client, tmp_path, monkeypatch):
-        client, router = mock_client
+    def test_login_failure_bad_credentials(self, tmp_path, monkeypatch):
         monkeypatch.setattr(auth_module, "TOKEN_CACHE_FILE", tmp_path / ".token_cache.json")
 
-        router.post("/auth/login").mock(
+        self.router.post("/auth/login").mock(
             return_value=httpx.Response(401, json={"status": "error", "message": "Unauthorized"})
         )
 
-        result = login(client, use_cache=False)
+        result = login(self.mock_client, use_cache=False)
         assert result is None
 
-    def test_login_non_success_status_in_body(self, mock_client, tmp_path, monkeypatch):
-        client, router = mock_client
+    def test_login_non_success_status_in_body(self, tmp_path, monkeypatch):
         monkeypatch.setattr(auth_module, "TOKEN_CACHE_FILE", tmp_path / ".token_cache.json")
 
-        router.post("/auth/login").mock(
+        self.router.post("/auth/login").mock(
             return_value=httpx.Response(200, json={"status": "error", "message": "Invalid credentials"})
         )
 
-        result = login(client, use_cache=False)
+        result = login(self.mock_client, use_cache=False)
         assert result is None
 
-    def test_login_uses_cache_when_valid(self, mock_client, tmp_path, monkeypatch):
-        client, router = mock_client
+    def test_login_uses_cache_when_valid(self, tmp_path, monkeypatch):
         valid_token = make_jwt(exp=int(time.time()) + 3600)
         cache_file = tmp_path / ".token_cache.json"
         cache_file.write_text(json.dumps({"access_token": valid_token}))
         monkeypatch.setattr(auth_module, "TOKEN_CACHE_FILE", cache_file)
 
         # Mark the route but it should not be called
-        route = router.post("/auth/login").mock(
+        route = self.router.post("/auth/login").mock(
             return_value=httpx.Response(200, json={"status": "success", "access_token": "new_token"})
         )
 
-        result = login(client, use_cache=True)
+        result = login(self.mock_client, use_cache=True)
         assert result == valid_token
         assert route.called is False
 
-    def test_login_bypasses_cache_when_use_cache_false(self, mock_client, tmp_path, monkeypatch):
-        client, router = mock_client
+    def test_login_bypasses_cache_when_use_cache_false(self, tmp_path, monkeypatch):
         valid_token = make_jwt(exp=int(time.time()) + 3600)
         new_token = make_jwt(exp=int(time.time()) + 7200)
         cache_file = tmp_path / ".token_cache.json"
         cache_file.write_text(json.dumps({"access_token": valid_token}))
         monkeypatch.setattr(auth_module, "TOKEN_CACHE_FILE", cache_file)
 
-        router.post("/auth/login").mock(
+        self.router.post("/auth/login").mock(
             return_value=httpx.Response(200, json={"status": "success", "access_token": new_token})
         )
 
-        result = login(client, use_cache=False)
+        result = login(self.mock_client, use_cache=False)
         assert result == new_token

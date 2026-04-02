@@ -12,6 +12,7 @@ import httpx
 import respx
 
 from app.client import BookingClient
+from tests.base import TEST_BASE_URL
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -29,9 +30,9 @@ def mock_client():
     route paths like "/auth/login" are matched against the full request URL
     "https://api.dummy.com/api/auth/login".
     """
-    with respx.mock(base_url="https://api.worldsacross.com/api", assert_all_called=False) as router:
+    with respx.mock(base_url=TEST_BASE_URL, assert_all_called=False) as router:
         # router.route().pass_through()  # Allow respx to let unhandled requests through so pytest-socket can catch them
-        client = BookingClient(base_url="https://api.worldsacross.com/api")
+        client = BookingClient(base_url=TEST_BASE_URL)
         yield client, router
         client.close()
 
