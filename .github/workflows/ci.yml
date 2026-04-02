@@ -27,3 +27,5 @@ jobs:
 
       - name: Test
         run: pytest
+        env:
+          PYTHONPATH: .
