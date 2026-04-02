@@ -1,7 +1,7 @@
 import typer
 from app.client import BookingClient
 from app.config import app_config
-from app.auth import login, get_cached_token
+from app.auth import login, get_cached_token, is_token_expired
 from app.availability import get_available_teachers, get_teacher_slots, format_calendar, get_tutors_map
 from app.booking import book_lesson, get_bookings, cancel_booking
 from app.utils import get_server_time
@@ -44,7 +44,7 @@ def show_teacher_calendar(teacher_id: str, use_cache: bool = True):
             typer.echo(f"Fetching calendar for: {teacher_name} (ID: {teacher_id})")
             
             slots = get_teacher_slots(client, teacher_id)
-            if not slots and use_cache:
+            if (not slots or slots == "No slots found for this teacher.") and use_cache:
                 # If cached token failed (maybe expired but exp claim was missing or wrong)
                 # Try once more without cache
                 token = login(client, use_cache=False)
@@ -129,6 +129,14 @@ def book_class(
         client.set_token(token)
         result = book_lesson(client, teacher_id, datetime)
         
+        # If the booking failed with what looks like an auth error, try once with fresh login
+        if result.get("status") == "error" and ("Unauthorized" in str(result.get("message")) or "401" in str(result.get("message"))):
+            typer.echo("Token might be expired. Retrying with fresh login...")
+            token = login(client, use_cache=False)
+            if token:
+                client.set_token(token)
+                result = book_lesson(client, teacher_id, datetime)
+
         if result.get("status") == "success":
             typer.echo("Booking status: Success")
             msg = result.get("message", {})

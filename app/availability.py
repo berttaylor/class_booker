@@ -1,4 +1,4 @@
-from datetime import datetime as dt, timezone
+from datetime import datetime as dt, timezone, timedelta
 import pytz
 from app.client import BookingClient
 from app.config import app_config
@@ -108,12 +108,20 @@ def format_calendar(slots: list) -> str:
     if not days:
         return "No valid slots to display."
 
-    # Sort days
-    sorted_days = sorted(days.keys())
+    # Identify the full range of dates to display
+    sorted_existing_days = sorted(days.keys())
+    first_day = dt.strptime(sorted_existing_days[0], "%Y-%m-%d").date()
+    last_day = dt.strptime(sorted_existing_days[-1], "%Y-%m-%d").date()
+    
+    full_date_range = []
+    curr = first_day
+    while curr <= last_day:
+        full_date_range.append(curr.strftime("%Y-%m-%d"))
+        curr += timedelta(days=1)
     
     # Collect all unique local time slots across all days to form the Y-axis
     times = set()
-    for day in sorted_days:
+    for day in sorted_existing_days:
         for slot in days[day]:
             times.add(slot["_local_start"].strftime("%H:%M"))
     
@@ -123,20 +131,31 @@ def format_calendar(slots: list) -> str:
     time_col_label = f"Time ({app_config.timezone})"
     time_col_width = len(time_col_label)
     
-    header_row = f"{time_col_label} |"
-    for day in sorted_days:
-        short_day = day[5:] # MM-DD
-        header_row += f" {short_day} |"
+    header_row_1 = f"{' ' * time_col_width} |"
+    header_row_2 = f"{time_col_label} |"
     
-    output = header_row + "\n"
-    output += "-" * len(header_row) + "\n"
+    for day_str in full_date_range:
+        dt_obj = dt.strptime(day_str, "%Y-%m-%d")
+        weekday = dt_obj.strftime("%a") # 3-letter weekday
+        short_date = day_str[5:] # MM-DD
+        
+        # We need consistent column widths. 
+        # [AVA] is 5 chars, with colors it's more but visible is 5.
+        # Header " Mon " is 5 chars. " 04-02 " is 7 chars.
+        # Let's use 7 chars for columns to fit " 04-02 " and center " Mon " and "[AVA]".
+        header_row_1 += f"  {weekday}  |"
+        header_row_2 += f" {short_date} |"
+    
+    output = header_row_1 + "\n"
+    output += header_row_2 + "\n"
+    output += "-" * len(header_row_2) + "\n"
     
     # Build each row (Time)
     for time in sorted_times:
         row = f"{time:<{time_col_width}} |"
-        for day in sorted_days:
+        for day in full_date_range:
             # Find the slot for this day and local time
-            slot_on_day = next((s for s in days[day] if s["_local_start"].strftime("%H:%M") == time), None)
+            slot_on_day = next((s for s in days.get(day, []) if s["_local_start"].strftime("%H:%M") == time), None)
             if slot_on_day:
                 status = slot_on_day.get("status", "")
                 if status == "available":

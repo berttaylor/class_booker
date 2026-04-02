@@ -7,9 +7,9 @@ from datetime import datetime as dt, timedelta, timezone
 from typing import List, Dict, Any, Optional
 
 from app.rules import load_scheduling_rules, BookingRule
-from app.config import app_config
+from app.config import app_config, settings
 from app.client import BookingClient
-from app.auth import login
+from app.auth import login, is_token_expired
 from app.utils import get_server_time
 from app.booking import get_bookings, book_lesson
 from app.availability import get_available_teachers
@@ -39,18 +39,30 @@ def release_lock(f):
 def get_synced_now(client: BookingClient) -> tuple[dt, float]:
     """
     Fetches server time and calculates current local time synced with server.
+    Accounts for network latency by assuming half-RTT.
     Returns (synced_now_utc, drift_seconds).
     """
     local_before = dt.now(timezone.utc)
     server_res = get_server_time(client)
+    local_after = dt.now(timezone.utc)
+    
+    rtt = (local_after - local_before).total_seconds()
+    half_rtt = rtt / 2.0
+    
     drift = 0.0
     if "datetime" in server_res:
         try:
             # Expected format: "2026-04-01 21:03:00"
-            server_dt = dt.fromisoformat(server_res["datetime"].replace(' ', 'T')).replace(tzinfo=timezone.utc)
-            drift = (server_dt - local_before).total_seconds()
-            return server_dt, drift
-        except:
+            # We assume the server's response was its time at the moment it received our request.
+            # So the current server time is roughly server_dt + half_rtt.
+            server_dt_raw = dt.fromisoformat(server_res["datetime"].replace(' ', 'T')).replace(tzinfo=timezone.utc)
+            server_dt_synced = server_dt_raw + timedelta(seconds=half_rtt)
+            
+            # Drift is how much our local clock differs from the server clock.
+            # (server - local)
+            drift = (server_dt_synced - local_after).total_seconds()
+            return server_dt_synced, drift
+        except Exception:
             pass
     return dt.now(timezone.utc), 0.0
 
@@ -69,7 +81,11 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
         local_tz = pytz.timezone(rules_data.timezone)
         
         # 1. Sync server time and Auth check
-        print("Checking authentication...")
+        print("-" * 50)
+        print("INITIALIZING: Spanish Class Booking Automation")
+        print("-" * 50)
+        
+        print(f"Checking authentication ({settings.login_email})...")
         token = login(client)
         if not token:
             print("Authentication: FAILURE. Check your credentials.")
@@ -84,6 +100,7 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
         status_icon = "✓" if abs(drift) < 5 else "✗"
         print(f"Current server time: {now_local.strftime('%Y-%m-%d %H:%M:%S')} ({rules_data.timezone})")
         print(f"Server drift: {drift:+.3f}s {status_icon}")
+        print("-" * 50)
         
         due_rules = []
         rule_lesson_times = {} # rule_id -> lesson_dt_iso
@@ -150,21 +167,21 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
             minutes, seconds = divmod(remainder, 60)
             time_str = f"{hours}h {minutes}m {seconds}s" if hours > 0 else f"{minutes}m {seconds}s"
 
-            print(f"--- Next Rule Info ---")
+            print(f"--- UPCOMING RULE INFO ---")
             print(f"Next rule: {next_rule.id}")
             print(f"Lesson time: {next_lesson_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})")
             print(f"Booking opens at: {next_open_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})")
             print(f"Time until booking opens: {time_str}")
-            print(f"-------------------------------")
+            print(f"--------------------------")
 
         if not due_rules:
             if not verbose:
-                print("No rules are due for booking.")
+                print("Status: No rules are due for booking at this time.")
             return
 
-        print(f"Due rules found: {[r.id for r in due_rules]}")
+        print(f"Rules to process: {', '.join([r.id for r in due_rules])}")
         
-        # 2. Authenticate and fetch bookings once
+        # 2. Fetch bookings once
         print("Fetching current bookings...")
         bookings = get_bookings(client)
         # Filter for approved AND future (or today) bookings
@@ -174,6 +191,7 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
             if b.get("status") == "approved" and not b.get("past")
         ]
         print(f"Found {len(approved_bookings)} active future bookings.")
+        print("-" * 50)
         
         for rule in due_rules:
             target_slot_iso = rule_lesson_times[rule.id]
@@ -287,6 +305,17 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
                     time.sleep(wait_seconds + 0.05)
                 print("\nWindow OPEN! Attempting booking...")
 
+            # 4. Final Token Check
+            # If the token has expired or is about to expire during the wait, re-auth.
+            if is_token_expired(client.client.headers.get("Authorization", "").replace("Bearer ", ""), buffer_seconds=60):
+                print("Token expired or near-expiry. Re-authenticating...")
+                token = login(client, use_cache=False)
+                if token:
+                    client.set_token(token)
+                    print("Re-authentication successful.")
+                else:
+                    print("Re-authentication FAILED. Booking might fail.")
+
             # Attempt booking
             success = False
             for cand in final_candidates:
@@ -299,6 +328,15 @@ def run_due_process(verbose: bool = False, force: bool = False, force_soft: bool
 
                 print(f"Attempting Teacher {tname} ({tid})...")
                 res = book_lesson(client, tid, target_slot_iso)
+                
+                # If the booking failed with what looks like an auth error, try once with fresh login
+                if res.get("status") == "error" and ("Unauthorized" in str(res.get("message")) or "401" in str(res.get("message"))):
+                    print(f"Token rejected for Teacher {tname} ({tid}). Retrying with fresh login...")
+                    token = login(client, use_cache=False)
+                    if token:
+                        client.set_token(token)
+                        res = book_lesson(client, tid, target_slot_iso)
+
                 if res.get("status") == "success":
                     print(f"SUCCESS! Booked Teacher {tname} ({tid}).")
                     success = True

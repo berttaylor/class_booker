@@ -9,7 +9,7 @@ from app.config import app_config, settings
 
 TOKEN_CACHE_FILE = Path(".token_cache.json")
 
-def _is_token_expired(token: str) -> bool:
+def is_token_expired(token: str, buffer_seconds: int = 30) -> bool:
     """
     Decodes the JWT payload to check if it's expired.
     JWT is Header.Payload.Signature
@@ -29,8 +29,8 @@ def _is_token_expired(token: str) -> bool:
         if not exp:
             return False # No exp claim, assume valid for now
             
-        # Add 30 seconds buffer
-        return time.time() > (exp - 30)
+        # Add buffer
+        return time.time() > (exp - buffer_seconds)
     except Exception:
         return True # If decoding fails, treat as expired
 
@@ -41,7 +41,7 @@ def get_cached_token() -> Optional[str]:
         with open(TOKEN_CACHE_FILE, "r") as f:
             data = json.load(f)
             token = data.get("access_token")
-            if token and not _is_token_expired(token):
+            if token and not is_token_expired(token):
                 return token
     except Exception:
         pass

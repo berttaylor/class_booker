@@ -6,30 +6,147 @@ booking:
   precheck_lead_seconds: 120
 
 rules:
-  - id: midday_1
+  # MONDAY
+  - id: mon_midday_1
     enabled: true
-    weekdays: [mon, tue, wed, thu, fri]
+    weekdays: [mon]
+    start_time: "13:00"
+    teacher_ids: [184, 159, 12]
+    allow_fallbacks: true
+
+  - id: mon_midday_2
+    enabled: true
+    weekdays: [mon]
     start_time: "13:30"
-    teacher_ids: [159, 204, 121]
+    teacher_ids: [184, 159, 12]
     allow_fallbacks: true
 
-  - id: midday_2
+  - id: mon_evening_1
     enabled: true
-    weekdays: [mon, tue, wed, thu, fri]
-    start_time: "14:00"
-    teacher_ids: [159, 204, 121]
-    allow_fallbacks: true
-
-  - id: evening_1
-    enabled: true
-    weekdays: [mon, tue, wed, thu, fri]
+    weekdays: [mon]
     start_time: "18:00"
-    teacher_ids: [184, 81, 67]
+    teacher_ids: [66, 204, 56]
     allow_fallbacks: true
 
-  - id: evening_2
+  - id: mon_evening_2
     enabled: true
-    weekdays: [mon, tue, wed, thu, fri]
+    weekdays: [mon]
     start_time: "18:30"
-    teacher_ids: [184, 81, 67]
+    teacher_ids: [66, 204, 56]
+    allow_fallbacks: true
+
+  # TUESDAY
+  - id: tue_midday_1
+    enabled: true
+    weekdays: [tue]
+    start_time: "13:00"
+    teacher_ids: [184, 159, 12, 56, 7]
+    allow_fallbacks: true
+
+  - id: tue_midday_2
+    enabled: true
+    weekdays: [tue]
+    start_time: "13:30"
+    teacher_ids: [184, 159, 12, 56, 7]
+    allow_fallbacks: true
+
+  - id: tue_evening_1
+    enabled: true
+    weekdays: [tue]
+    start_time: "18:00"
+    teacher_ids: [66, 204, 56]
+    allow_fallbacks: true
+
+  - id: tue_evening_2
+    enabled: true
+    weekdays: [tue]
+    start_time: "18:30"
+    teacher_ids: [66, 204, 56]
+    allow_fallbacks: true
+
+  # WEDNESDAY
+  - id: wed_midday_1
+    enabled: true
+    weekdays: [wed]
+    start_time: "13:00"
+    teacher_ids: [184, 56, 7, 12]
+    allow_fallbacks: true
+
+  - id: wed_midday_2
+    enabled: true
+    weekdays: [wed]
+    start_time: "13:30"
+    teacher_ids: [184, 56, 7, 12]
+    allow_fallbacks: true
+
+  - id: wed_evening_1
+    enabled: true
+    weekdays: [wed]
+    start_time: "18:00"
+    teacher_ids: [64, 66, 204]
+    allow_fallbacks: true
+
+  - id: wed_evening_2
+    enabled: true
+    weekdays: [wed]
+    start_time: "18:30"
+    teacher_ids: [64, 66, 204]
+    allow_fallbacks: true
+
+  # THURSDAY
+  - id: thu_midday_1
+    enabled: true
+    weekdays: [thu]
+    start_time: "13:00"
+    teacher_ids: [159, 184, 56, 7]
+    allow_fallbacks: true
+
+  - id: thu_midday_2
+    enabled: true
+    weekdays: [thu]
+    start_time: "13:30"
+    teacher_ids: [159, 184, 56, 7]
+    allow_fallbacks: true
+
+  - id: thu_evening_1
+    enabled: true
+    weekdays: [thu]
+    start_time: "18:00"
+    teacher_ids: [64, 66, 56]
+    allow_fallbacks: true
+
+  - id: thu_evening_2
+    enabled: true
+    weekdays: [thu]
+    start_time: "18:30"
+    teacher_ids: [64, 66, 56]
+    allow_fallbacks: true
+
+  # FRIDAY
+  - id: fri_midday_1
+    enabled: true
+    weekdays: [fri]
+    start_time: "13:00"
+    teacher_ids: [159, 56, 81, 7]
+    allow_fallbacks: true
+
+  - id: fri_midday_2
+    enabled: true
+    weekdays: [fri]
+    start_time: "13:30"
+    teacher_ids: [159, 56, 81, 7]
+    allow_fallbacks: true
+
+  - id: fri_evening_1
+    enabled: true
+    weekdays: [fri]
+    start_time: "18:00"
+    teacher_ids: [81, 64, 56]
+    allow_fallbacks: true
+
+  - id: fri_evening_2
+    enabled: true
+    weekdays: [fri]
+    start_time: "18:30"
+    teacher_ids: [81, 64, 56]
     allow_fallbacks: true
