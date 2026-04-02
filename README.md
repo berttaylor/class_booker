@@ -5,17 +5,21 @@ Python CLI tool that automates Spanish class booking by calling the booking plat
 ## Setup
 
 1.  Install Python 3.12+
-2.  Install dependencies:
+2.  Create and activate a virtual environment:
+    ```bash
+    python3 -m venv .venv
+    source .venv/bin/activate
+    ```
+3.  Install dependencies:
     ```bash
     pip install -r requirements.txt
     ```
-3.  Configure `.env` with your credentials:
-    ```env
-    LOGIN_EMAIL=your@email.com
-    LOGIN_PASSWORD=your_password
+4.  Run the setup script — this creates your `.env`, `scheduling_rules.yml`, and installs the scheduled job:
+    ```bash
+    ./setup.sh
     ```
-4.  Configure `config.yaml` if needed (defaults provided for worldsacross.com).
-5.  Configure `scheduling_rules.yml` with your desired lesson schedule.
+5.  Fill in your credentials in `.env` and configure your lesson schedule in `scheduling_rules.yml`.
+6.  Configure `config.yaml` if needed (defaults provided for worldsacross.com).
 
 ## Usage
 
