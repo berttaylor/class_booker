@@ -19,7 +19,26 @@ Python CLI tool that automates Spanish class booking by calling the booking plat
     ./setup.sh
     ```
 5.  Fill in your credentials in `.env` and configure your lesson schedule in `scheduling_rules.yml`.
-6.  Configure `config.yaml` if needed (defaults provided for worldsacross.com).
+6.  Fetch the teacher list and create `teachers.json` (required before `run-due` will work):
+    ```bash
+    python main.py populate-teachers
+    ```
+7.  Update `scheduling_rules.yml` with teacher names from `teachers.json`, then run `run-due`.
+8.  Configure `config.yaml` if needed (defaults provided for worldsacross.com).
+
+### Rule format
+
+Each rule in `scheduling_rules.yml` books 1 or 2 consecutive 30-minute slots on a given weekday. Teacher names must match exactly as they appear in `teachers.json`:
+
+```yaml
+- label: midday                                    # combined with weekday → rule ID (e.g. mon_midday)
+  weekday: mon                                     # mon, tue, wed, thu, fri, sat, sun
+  enabled: true
+  start_time: "13:00"                              # HH:MM, must be on the hour or half-hour
+  slots: 2                                         # 1 books 13:00 only; 2 books 13:00 and 13:30
+  preferred_teachers: ["Maria Garcia", "Ana Lopez"] # tried in order; leave empty if allow_fallbacks: true
+  allow_fallbacks: true                            # fall back to any available teacher if preferred unavailable
+```
 
 ## Usage
 
@@ -34,7 +53,12 @@ View a teacher's availability calendar:
 python main.py teacher-calendar --teacher-id "81"
 ```
 
-List all tutors:
+Fetch all teachers and update `teachers.json`:
+```bash
+python main.py populate-teachers
+```
+
+List all tutors (also refreshes `teachers.json`):
 ```bash
 python main.py list-tutors
 ```
@@ -64,17 +88,12 @@ Run automated bookings for due rules:
 python main.py run-due
 ```
 
-Show verbose output about the next upcoming rule:
-```bash
-python main.py run-due --verbose
-```
-
 Force the next upcoming rule to be processed now (actual booking):
 ```bash
 python main.py run-due --force
 ```
 
-Soft-force (Dry run) the next upcoming rule (simulate everything but don't book):
+Soft-force (dry run) the next upcoming rule — simulates everything but doesn't book:
 ```bash
 python main.py run-due --force-soft
 ```

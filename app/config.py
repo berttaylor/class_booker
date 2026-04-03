@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # Pushover notifications (optional)
     pushover_user_key: str | None = None
     pushover_api_token: str | None = None
+
+    # Teacher cache
+    update_teachers_frequency_days: int = 7
     
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

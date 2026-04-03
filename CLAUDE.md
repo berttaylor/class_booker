@@ -54,7 +54,11 @@ app/
 - `.env` — login credentials (`LOGIN_EMAIL`, `LOGIN_PASSWORD`) → `Settings`
 - `scheduling_rules.yml` — automated booking rules → `SchedulingRules` via `app/rules.py`
 
-**Scheduler** (`services/scheduler.py` → `run_due_process`): evaluates all enabled rules from `scheduling_rules.yml`, calculates when each lesson's booking window opens (lesson time minus `open_offset_days`/`open_offset_minutes`), syncs with server time to correct for clock drift, then books the lesson when within `precheck_lead_seconds` of the window opening. The main function is ~60 lines delegating to private helpers (`_evaluate_rules`, `_get_candidates`, `_wait_for_window`, `_attempt_booking`, etc.).
+**`BookingRule` schema** (`app/rules.py`): each rule has `label` (e.g. `"midday"`), `weekday` (single string, e.g. `"mon"`), `start_time` (HH:MM, on the hour or half-hour), `slots` (1 or 2), `preferred_teachers` (list of teacher name strings), and `allow_fallbacks`. The `id` property is computed as `f"{weekday}_{label}"`. `slot_times()` expands to `["13:00"]` or `["13:00", "13:30"]` depending on `slots`. Pydantic validators enforce all constraints at load time.
+
+**Teacher cache** (`app/teachers.py`): `teachers.json` (gitignored, project root) maps teacher name → `{id, is_favorite, status}`. Names are never deleted — absent teachers are marked `REMOVED`. Updated by `list-tutors` and the `populate-teachers` CLI command. `run-due` checks the cache on startup: exits with a message if missing, auto-refreshes if older than `UPDATE_TEACHERS_FREQUENCY_DAYS` (default 7, set in `.env`), and raises a `ValueError` if any name in the rules is unknown.
+
+**Scheduler** (`services/scheduler.py` → `run_due_process`): two-phase design — Phase 1 uses the local clock only to check if any rule is due (no API calls); Phase 2 authenticates and syncs server time only when a booking is actually due. `_evaluate_rules` expands each rule into individual slot entries keyed by `slot_key` (e.g. `wed_midday_slot1`), returning `(rule, slot_key)` tuples in `due_rules` and dicts keyed by `slot_key`. Uses a file lock (`.run_due.lock`) to prevent concurrent runs.
 
 ## Testing
 

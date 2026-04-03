@@ -20,12 +20,21 @@ from app.rules import BookingRule, BookingConfig, SchedulingRules
 # Helpers
 # ---------------------------------------------------------------------------
 
+FAKE_CACHE = {
+    "updated": "2026-04-03",
+    "teachers": {
+        "Maria Garcia": {"id": 184, "is_favorite": True, "status": "ACTIVE"},
+        "Carlos Lopez": {"id": 159, "is_favorite": False, "status": "ACTIVE"},
+    },
+}
+
+
 def make_rules(
     weekday: str = "wed",
     start_time: str = "13:00",
-    teacher_ids=None,
+    preferred_teachers=None,
     allow_fallbacks: bool = True,
-    rule_id: str = "test_rule",
+    label: str = "test",
     open_offset_days: int = 7,
     open_offset_minutes: int = 30,
     precheck_lead_seconds: int = 120,
@@ -40,11 +49,12 @@ def make_rules(
         ),
         rules=[
             BookingRule(
-                id=rule_id,
+                label=label,
                 enabled=True,
-                weekdays=[weekday],
+                weekday=weekday,
                 start_time=start_time,
-                teacher_ids=teacher_ids or [184, 159],
+                slots=1,
+                preferred_teachers=preferred_teachers or ["Maria Garcia", "Carlos Lopez"],
                 allow_fallbacks=allow_fallbacks,
             )
         ],
@@ -148,6 +158,8 @@ def run_due_with_mocks(
         # freezegun should handle dt.now() automatically.
         
         with patch.object(sched_module, "load_scheduling_rules", return_value=rules), \
+             patch.object(sched_module, "load_teacher_cache", return_value=FAKE_CACHE), \
+             patch.object(sched_module, "validate_rules_against_cache"), \
              patch.object(sched_module, "login", return_value=token), \
              patch.object(sched_module, "get_server_time", side_effect=lambda client: {"datetime": frozen.time_to_freeze.strftime("%Y-%m-%d %H:%M:%S")}), \
              patch.object(sched_module, "get_bookings", return_value=existing_bookings), \
@@ -188,7 +200,7 @@ class TestRuleEvaluation:
         rules = make_rules(
             weekday="wed",
             start_time="13:00",
-            teacher_ids=[184],
+            preferred_teachers=["Maria Garcia"],
             precheck_lead_seconds=120,
         )
         available = [make_available("184", "Maria Garcia")]
@@ -210,7 +222,7 @@ class TestRuleEvaluation:
         rules = make_rules(
             weekday="wed",
             start_time="13:00",
-            teacher_ids=[184],
+            preferred_teachers=["Maria Garcia"],
             precheck_lead_seconds=120,
         )
         available = [make_available("184", "Maria Garcia")]
@@ -273,7 +285,7 @@ class TestRuleEvaluation:
 class TestCandidateSelection:
     def test_preferred_teacher_selected_first(self):
         """Teacher 184 is first in teacher_ids and available → books 184, not 159."""
-        rules = make_rules(weekday="wed", start_time="13:00", teacher_ids=[184, 159])
+        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia", "Carlos Lopez"])
         available = [
             make_available("184", "Maria Garcia"),
             make_available("159", "Carlos Lopez"),
@@ -294,7 +306,7 @@ class TestCandidateSelection:
         rules = make_rules(
             weekday="wed",
             start_time="13:00",
-            teacher_ids=[999],  # not available
+            preferred_teachers=["Unknown Teacher"],  # not available
             allow_fallbacks=True,
         )
         available = [make_available("184", "Maria Garcia")]
@@ -311,7 +323,7 @@ class TestCandidateSelection:
         rules = make_rules(
             weekday="wed",
             start_time="13:00",
-            teacher_ids=[999],
+            preferred_teachers=["Unknown Teacher"],
             allow_fallbacks=False,
         )
         available = [make_available("184", "Maria Garcia")]
@@ -325,7 +337,7 @@ class TestCandidateSelection:
 
     def test_no_available_teachers_skips(self):
         """If no teachers available at all, booking is skipped."""
-        rules = make_rules(weekday="wed", start_time="13:00", teacher_ids=[184])
+        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"])
 
         book_fn = run_due_with_mocks(
             frozen_time="2026-04-08T10:29:00+00:00",
@@ -342,7 +354,7 @@ class TestCandidateSelection:
 class TestAlreadyBooked:
     def test_already_booked_skips_rule(self):
         """If the target slot is already booked, book_lesson is never called."""
-        rules = make_rules(weekday="wed", start_time="13:00", teacher_ids=[184])
+        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"])
 
         # Lesson is Wed 2026-04-15 13:00 Madrid.
         # In ISO: 2026-04-15T13:00:00+02:00 → Madrid date = "2026-04-15", time = "13:00:00"
@@ -377,7 +389,7 @@ class TestDailyLimit:
         If teacher 184 already has 2 bookings (60 min total) on the target day,
         they should be filtered out and 159 booked instead.
         """
-        rules = make_rules(weekday="wed", start_time="13:00", teacher_ids=[184, 159])
+        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia", "Carlos Lopez"])
         target_date = "2026-04-15"
 
         existing = [
@@ -402,7 +414,7 @@ class TestDailyLimit:
 
     def test_under_60min_limit_not_filtered(self):
         """Teacher with only 1 booking (30 min) on the day is still eligible."""
-        rules = make_rules(weekday="wed", start_time="13:00", teacher_ids=[184])
+        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"])
         target_date = "2026-04-15"
 
         existing = [
@@ -432,7 +444,7 @@ class TestAdjacencyPriority:
         If teacher 159 taught the slot at 12:30 (30 min before 13:00),
         they should be moved to the front of candidates even if 184 is preferred.
         """
-        rules = make_rules(weekday="wed", start_time="13:00", teacher_ids=[184, 159])
+        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia", "Carlos Lopez"])
         target_date = "2026-04-15"
 
         existing = [
@@ -457,7 +469,7 @@ class TestAdjacencyPriority:
 
     def test_adjacency_only_prioritizes_if_in_candidates(self):
         """Adjacent teacher who isn't in candidates (e.g. excluded by limit) is not promoted."""
-        rules = make_rules(weekday="wed", start_time="13:00", teacher_ids=[184])
+        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"])
         target_date = "2026-04-15"
 
         existing = [
@@ -488,7 +500,7 @@ class TestRetryLogic:
         If book_lesson returns the Spanish timing error twice then succeeds,
         book_lesson should be called 3 times total (2 retries + 1 success).
         """
-        rules = make_rules(weekday="wed", start_time="13:00", teacher_ids=[184])
+        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"])
         available = [make_available("184", "Maria Garcia")]
 
         timing_error = {"status": "error", "message": "La fecha excede el límite de agendamiento."}
@@ -508,7 +520,7 @@ class TestRetryLogic:
         If timing error persists all 3 attempts, book_lesson is called exactly 3 times
         and then moves on (or fails).
         """
-        rules = make_rules(weekday="wed", start_time="13:00", teacher_ids=[184])
+        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"])
         available = [make_available("184", "Maria Garcia")]
 
         timing_error = {"status": "error", "message": "excede el agendamiento límite"}
@@ -525,7 +537,7 @@ class TestRetryLogic:
 
     def test_no_retry_on_non_timing_error(self):
         """A generic error should not trigger a retry — fail fast and try next candidate."""
-        rules = make_rules(weekday="wed", start_time="13:00", teacher_ids=[184, 159])
+        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia", "Carlos Lopez"])
         available = [
             make_available("184", "Maria Garcia"),
             make_available("159", "Carlos Lopez"),
@@ -552,7 +564,7 @@ class TestRetryLogic:
 class TestForceMode:
     def test_force_processes_even_when_no_due_rules(self):
         """With --force and no currently-due rules, the next upcoming rule is forced."""
-        rules = make_rules(weekday="wed", start_time="13:00", teacher_ids=[184])
+        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"])
         available = [make_available("184", "Maria Garcia")]
 
         # Freeze at a time far from the booking window (not due)
@@ -566,7 +578,7 @@ class TestForceMode:
 
     def test_force_soft_dry_run_does_not_book(self):
         """With --force-soft, book_lesson should never be called."""
-        rules = make_rules(weekday="wed", start_time="13:00", teacher_ids=[184])
+        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"])
         available = [make_available("184", "Maria Garcia")]
 
         book_fn = run_due_with_mocks(
@@ -585,7 +597,7 @@ class TestForceMode:
 class TestLock:
     def test_lock_prevents_concurrent_run(self, capsys):
         """If acquire_lock returns None, run_due_process exits early."""
-        rules = make_rules(weekday="wed", start_time="13:00", teacher_ids=[184])
+        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"])
 
         with freeze_time("2026-04-08T10:29:00+00:00"):
             with patch.object(sched_module, "acquire_lock", return_value=None), \
@@ -618,19 +630,21 @@ class TestBookingsCacheUpdate:
             ),
             rules=[
                 BookingRule(
-                    id="rule_1",
+                    label="rule1",
                     enabled=True,
-                    weekdays=["wed"],
+                    weekday="wed",
                     start_time="13:00",
-                    teacher_ids=[184],
+                    slots=1,
+                    preferred_teachers=["Maria Garcia"],
                     allow_fallbacks=False,
                 ),
                 BookingRule(
-                    id="rule_2",
+                    label="rule2",
                     enabled=True,
-                    weekdays=["wed"],
+                    weekday="wed",
                     start_time="13:00",  # Same timeslot
-                    teacher_ids=[159],
+                    slots=1,
+                    preferred_teachers=["Carlos Lopez"],
                     allow_fallbacks=False,
                 ),
             ],
@@ -645,6 +659,8 @@ class TestBookingsCacheUpdate:
 
         with freeze_time(frozen_time) as frozen:
             with patch.object(sched_module, "load_scheduling_rules", return_value=rules), \
+                 patch.object(sched_module, "load_teacher_cache", return_value=FAKE_CACHE), \
+                 patch.object(sched_module, "validate_rules_against_cache"), \
                  patch.object(sched_module, "login", return_value="fake.token"), \
                  patch.object(sched_module, "get_server_time", side_effect=lambda client: {"datetime": frozen.time_to_freeze.strftime("%Y-%m-%d %H:%M:%S")}), \
                  patch.object(sched_module, "get_bookings", return_value=[]), \
@@ -663,3 +679,41 @@ class TestBookingsCacheUpdate:
 
         # book_lesson should only be called once — second rule sees the slot as taken
         assert book_fn.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Teacher cache checks
+# ---------------------------------------------------------------------------
+
+class TestTeacherCache:
+    def test_exits_if_no_cache(self, capsys):
+        """run_due_process exits early with a message when teachers.json is missing."""
+        rules = make_rules(weekday="wed", start_time="13:00")
+
+        with freeze_time("2026-04-08T10:29:00+00:00"):
+            with patch.object(sched_module, "load_scheduling_rules", return_value=rules), \
+                 patch.object(sched_module, "load_teacher_cache", return_value={}), \
+                 patch.object(sched_module, "acquire_lock", return_value=MagicMock()), \
+                 patch.object(sched_module, "release_lock"), \
+                 patch.object(sched_module, "book_lesson") as book_fn:
+                run_due_process()
+
+        assert not book_fn.called
+        captured = capsys.readouterr()
+        assert "populate-teachers" in captured.out
+
+    def test_refreshes_stale_cache(self, capsys):
+        """If cache is older than update_teachers_frequency_days, populate_teachers is called."""
+        rules = make_rules(weekday="wed", start_time="13:00")
+        stale_cache = {**FAKE_CACHE, "updated": "2026-01-01"}  # very old
+
+        with freeze_time("2026-04-08T10:00:00+00:00"):
+            with patch.object(sched_module, "load_scheduling_rules", return_value=rules), \
+                 patch.object(sched_module, "load_teacher_cache", return_value=stale_cache), \
+                 patch.object(sched_module, "validate_rules_against_cache"), \
+                 patch.object(sched_module, "populate_teachers") as pop_fn, \
+                 patch.object(sched_module, "acquire_lock", return_value=MagicMock()), \
+                 patch.object(sched_module, "release_lock"):
+                run_due_process()
+
+        assert pop_fn.called

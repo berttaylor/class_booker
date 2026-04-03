@@ -7,9 +7,31 @@ booking:
 
 rules:
   # MONDAY
-  - id: mon_midday_1
+  - label: midday
+    weekday: mon
     enabled: true
-    weekdays: [mon]
-    start_time: "14:00"
-    teacher_ids: []
+    start_time: "13:00"
+    slots: 2
+    preferred_teachers: [
+      "Teacher Name",
+      "Another Teacher"
+    ]
     allow_fallbacks: true
+
+  - label: evening
+    weekday: mon
+    enabled: false
+    start_time: "18:00"
+    slots: 2
+    preferred_teachers: []
+    allow_fallbacks: true
+
+  # Add more rules following the same pattern.
+  # label:              short name for the rule (e.g. "midday", "evening")
+  # weekday:            one of mon, tue, wed, thu, fri, sat, sun
+  # enabled:            true/false
+  # start_time:         "HH:MM" — must be on the hour or half-hour
+  # slots:              1 or 2 consecutive 30-min bookings starting at start_time
+  # preferred_teachers: teacher names in priority order — must match names in teachers.json exactly
+  #                     run `python main.py populate-teachers` to generate teachers.json
+  # allow_fallbacks:    if true, fall back to any available teacher when preferred are unavailable

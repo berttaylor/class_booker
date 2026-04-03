@@ -9,6 +9,7 @@ from app.api.booking import book_lesson, cancel_booking, get_bookings
 from app.config import app_config
 from app.services.scheduler import run_due_process
 from app.services.session import authed_client, ensure_fresh_token
+from app.teachers import populate_teachers
 from app.utils import get_server_time
 
 app = typer.Typer()
@@ -237,7 +238,7 @@ def run_due(
 @app.command(name="list-tutors")
 def list_tutors():
     """
-    List all available tutors.
+    List all available tutors and refresh teachers.json cache.
     """
     try:
         with authed_client() as client:
@@ -247,11 +248,27 @@ def list_tutors():
                 typer.echo("No tutors found.")
                 return
 
+            populate_teachers(client)
+
             typer.echo(f"{'ID':<10} | {'Name':<30} | {'Favorite':<10}")
             typer.echo("-" * 55)
             for tid, data in sorted(tutor_map.items(), key=lambda x: x[1]['name']):
                 fav_status = "★" if data.get("is_favorite") else " "
                 typer.echo(f"{tid:<10} | {data.get('name'):<30} | {fav_status:<10}")
+    except RuntimeError:
+        typer.echo("Authentication: Failure")
+
+
+@app.command(name="populate-teachers")
+def populate_teachers_cmd():
+    """
+    Fetch all teachers from the API and save to teachers.json.
+    Run this once before using run-due, and whenever your teacher list may have changed.
+    """
+    try:
+        with authed_client() as client:
+            populate_teachers(client)
+            typer.echo("teachers.json updated.")
     except RuntimeError:
         typer.echo("Authentication: Failure")
 
