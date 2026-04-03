@@ -12,10 +12,9 @@ rules:
     enabled: true
     start_time: "13:00"
     slots: 2
-    preferred_teachers: [
-      "Teacher Name",
-      "Another Teacher"
-    ]
+    preferred_teachers:
+      - "Teacher Name"
+      - "Another Teacher"
     allow_fallbacks: true
 
   - label: evening

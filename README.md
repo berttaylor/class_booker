@@ -31,13 +31,15 @@ Python CLI tool that automates Spanish class booking by calling the booking plat
 Each rule in `scheduling_rules.yml` books 1 or 2 consecutive 30-minute slots on a given weekday. Teacher names must match exactly as they appear in `teachers.json`:
 
 ```yaml
-- label: midday                                    # combined with weekday → rule ID (e.g. mon_midday)
-  weekday: mon                                     # mon, tue, wed, thu, fri, sat, sun
+- label: midday        # combined with weekday → rule ID (e.g. mon_midday)
+  weekday: mon         # mon, tue, wed, thu, fri, sat, sun
   enabled: true
-  start_time: "13:00"                              # HH:MM, must be on the hour or half-hour
-  slots: 2                                         # 1 books 13:00 only; 2 books 13:00 and 13:30
-  preferred_teachers: ["Maria Garcia", "Ana Lopez"] # tried in order; leave empty if allow_fallbacks: true
-  allow_fallbacks: true                            # fall back to any available teacher if preferred unavailable
+  start_time: "13:00"  # HH:MM, must be on the hour or half-hour
+  slots: 2             # 1 books 13:00 only; 2 books 13:00 and 13:30
+  preferred_teachers:  # tried in order; must match names in teachers.json exactly
+    - "Maria Garcia"
+    - "Ana Lopez"
+  allow_fallbacks: true  # fall back to any available teacher if preferred unavailable
 ```
 
 ## Usage

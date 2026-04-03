@@ -14,7 +14,7 @@ class BookingRule(BaseModel):
     weekday: str
     start_time: str
     slots: int
-    preferred_teachers: List[str]
+    preferred_teachers: List[str] = []
     allow_fallbacks: bool
 
     @field_validator("weekday")
