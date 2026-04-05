@@ -10,7 +10,7 @@ from app.utils import normalize_datetime
 
 def get_tutors_map(client: BookingClient) -> Dict[str, Dict[str, Any]]:
     """
-    Fetches the list of tutors and returns a mapping of ID to its data (name, is_favorite).
+    Fetches the list of tutors and returns a mapping of ID to its data (name).
     """
     response = client.get(app_config.tutors_list_endpoint)
     if response.status_code != 200:
@@ -24,9 +24,8 @@ def get_tutors_map(client: BookingClient) -> Dict[str, Dict[str, Any]]:
         for tutor in tutors:
             tid = str(tutor.get("id"))
             name = tutor.get("name")
-            is_favorite = tutor.get("is_favorite", False)
             if tid and name:
-                tutor_map[tid] = {"name": name, "is_favorite": is_favorite}
+                tutor_map[tid] = {"name": name}
         return tutor_map
     except Exception as e:
         print(f"Error fetching tutors list: {e}")

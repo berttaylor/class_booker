@@ -10,8 +10,8 @@ NOTION_BASE = "https://api.notion.com/v1"
 FAKE_CACHE = {
     "updated": "2026-04-05",
     "teachers": {
-        "Maria Garcia": {"id": 184, "is_favorite": True, "status": "ACTIVE"},
-        "Carlos Lopez": {"id": 159, "is_favorite": False, "status": "REMOVED"},
+        "Maria Garcia": {"id": 184, "status": "ACTIVE"},
+        "Carlos Lopez": {"id": 159, "status": "REMOVED"},
     },
 }
 
@@ -21,6 +21,7 @@ def mock_settings(token="secret_token", db_id="db-id", run_log_db_id="log-db-id"
         notion_api_token = token
         notion_teachers_database_id = db_id
         notion_run_log_database_id = run_log_db_id
+        service_name = "test_service"
     return patch("app.notion.settings", FakeSettings())
 
 
@@ -33,7 +34,6 @@ def notion_query_response(existing_pages: list[dict]) -> httpx.Response:
             "properties": {
                 "Name": {"title": [{"plain_text": p["name"]}]},
                 "Platform ID": {"number": p.get("platform_id")},
-                "Favorite": {"checkbox": p.get("is_favorite", False)},
                 "Status": {"select": {"name": p.get("status", "ACTIVE")}},
                 "Updated": {"date": {"start": p.get("updated", "2026-04-05")}},
             },
@@ -46,20 +46,17 @@ def notion_query_response(existing_pages: list[dict]) -> httpx.Response:
 # ---------------------------------------------------------------------------
 
 class TestHasChanges:
-    def _page_state(self, platform_id=184, is_favorite=True, status="ACTIVE", updated="2026-04-05"):
-        return {"platform_id": platform_id, "is_favorite": is_favorite, "status": status, "updated": updated}
+    def _page_state(self, platform_id=184, status="ACTIVE", updated="2026-04-05"):
+        return {"platform_id": platform_id, "status": status, "updated": updated}
 
-    def _entry(self, id=184, is_favorite=True, status="ACTIVE"):
-        return {"id": id, "is_favorite": is_favorite, "status": status}
+    def _entry(self, id=184, status="ACTIVE"):
+        return {"id": id, "status": status}
 
     def test_no_changes(self):
         assert not _has_changes(self._page_state(), self._entry(), "2026-04-05")
 
     def test_changed_status(self):
         assert _has_changes(self._page_state(status="ACTIVE"), self._entry(status="REMOVED"), "2026-04-05")
-
-    def test_changed_favorite(self):
-        assert _has_changes(self._page_state(is_favorite=True), self._entry(is_favorite=False), "2026-04-05")
 
     def test_changed_platform_id(self):
         assert _has_changes(self._page_state(platform_id=100), self._entry(id=184), "2026-04-05")
@@ -76,28 +73,27 @@ class TestExtractPageState:
         page = {
             "properties": {
                 "Platform ID": {"number": 184},
-                "Favorite": {"checkbox": True},
                 "Status": {"select": {"name": "ACTIVE"}},
                 "Updated": {"date": {"start": "2026-04-05"}},
             }
         }
         state = _extract_page_state(page)
-        assert state == {"platform_id": 184, "is_favorite": True, "status": "ACTIVE", "updated": "2026-04-05"}
+        assert state == {"platform_id": 184, "status": "ACTIVE", "updated": "2026-04-05"}
 
     def test_handles_null_platform_id(self):
-        page = {"properties": {"Platform ID": {"number": None}, "Favorite": {"checkbox": False},
+        page = {"properties": {"Platform ID": {"number": None},
                                 "Status": {"select": None}, "Updated": {"date": None}}}
         state = _extract_page_state(page)
         assert state["platform_id"] is None
 
     def test_handles_null_status(self):
-        page = {"properties": {"Status": {"select": None}, "Favorite": {"checkbox": False},
+        page = {"properties": {"Status": {"select": None},
                                 "Platform ID": {"number": None}, "Updated": {"date": None}}}
         state = _extract_page_state(page)
         assert state["status"] is None
 
     def test_handles_null_updated(self):
-        page = {"properties": {"Updated": {"date": None}, "Favorite": {"checkbox": False},
+        page = {"properties": {"Updated": {"date": None},
                                 "Platform ID": {"number": None}, "Status": {"select": None}}}
         state = _extract_page_state(page)
         assert state["updated"] is None
@@ -127,7 +123,7 @@ class TestSyncTeachersToNotion:
                 )
                 result = sync_teachers_to_notion({
                     "updated": "2026-04-05",
-                    "teachers": {"Maria Garcia": {"id": 184, "is_favorite": True, "status": "ACTIVE"}},
+                    "teachers": {"Maria Garcia": {"id": 184, "status": "ACTIVE"}},
                 })
         assert result is True
         assert create_route.called
@@ -135,11 +131,11 @@ class TestSyncTeachersToNotion:
     def test_updates_changed_page(self):
         with mock_settings():
             with respx.mock(assert_all_called=False) as router:
-                # Existing page has is_favorite=False, but cache has True — should update
+                # Existing page has REMOVED status, but cache has ACTIVE — should update
                 router.post(f"{NOTION_BASE}/databases/db-id/query").mock(
                     return_value=notion_query_response([{
                         "id": "page-id", "name": "Maria Garcia",
-                        "platform_id": 184, "is_favorite": False, "status": "ACTIVE", "updated": "2026-04-05",
+                        "platform_id": 184, "status": "REMOVED", "updated": "2026-04-05",
                     }])
                 )
                 update_route = router.patch(f"{NOTION_BASE}/pages/page-id").mock(
@@ -147,7 +143,7 @@ class TestSyncTeachersToNotion:
                 )
                 result = sync_teachers_to_notion({
                     "updated": "2026-04-05",
-                    "teachers": {"Maria Garcia": {"id": 184, "is_favorite": True, "status": "ACTIVE"}},
+                    "teachers": {"Maria Garcia": {"id": 184, "status": "ACTIVE"}},
                 })
         assert result is True
         assert update_route.called
@@ -159,7 +155,7 @@ class TestSyncTeachersToNotion:
                 router.post(f"{NOTION_BASE}/databases/db-id/query").mock(
                     return_value=notion_query_response([{
                         "id": "page-id", "name": "Maria Garcia",
-                        "platform_id": 184, "is_favorite": True, "status": "ACTIVE", "updated": "2026-04-05",
+                        "platform_id": 184, "status": "ACTIVE", "updated": "2026-04-05",
                     }])
                 )
                 update_route = router.patch(f"{NOTION_BASE}/pages/page-id").mock(
@@ -167,7 +163,7 @@ class TestSyncTeachersToNotion:
                 )
                 sync_teachers_to_notion({
                     "updated": "2026-04-05",
-                    "teachers": {"Maria Garcia": {"id": 184, "is_favorite": True, "status": "ACTIVE"}},
+                    "teachers": {"Maria Garcia": {"id": 184, "status": "ACTIVE"}},
                 })
         assert not update_route.called
 
@@ -177,7 +173,7 @@ class TestSyncTeachersToNotion:
                 router.post(f"{NOTION_BASE}/databases/db-id/query").mock(
                     return_value=notion_query_response([{
                         "id": "page-id", "name": "Carlos Lopez",
-                        "platform_id": 159, "is_favorite": False, "status": "ACTIVE", "updated": "2026-01-01",
+                        "platform_id": 159, "status": "ACTIVE", "updated": "2026-01-01",
                     }])
                 )
                 update_route = router.patch(f"{NOTION_BASE}/pages/page-id").mock(
@@ -185,7 +181,7 @@ class TestSyncTeachersToNotion:
                 )
                 sync_teachers_to_notion({
                     "updated": "2026-04-05",
-                    "teachers": {"Carlos Lopez": {"id": 159, "is_favorite": False, "status": "REMOVED"}},
+                    "teachers": {"Carlos Lopez": {"id": 159, "status": "REMOVED"}},
                 })
         body = json.loads(update_route.calls[0].request.content)
         assert body["properties"]["Status"]["select"]["name"] == "REMOVED"

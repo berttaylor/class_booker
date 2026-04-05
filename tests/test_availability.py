@@ -27,7 +27,7 @@ class TestGetAvailableTeachers(BaseTest):
 
     def test_filters_booked_slots(self):
         self.router.get("/auth/tutors/list").mock(
-            return_value=httpx.Response(200, json={"data": [{"id": 184, "name": "Maria", "is_favorite": False}]})
+            return_value=httpx.Response(200, json={"data": [{"id": 184, "name": "Maria"}]})
         )
         self.router.post("/auth/booking/calendar").mock(
             return_value=httpx.Response(200, json={
@@ -78,7 +78,7 @@ class TestGetAvailableTeachers(BaseTest):
     def test_handles_list_response_format(self):
         """API might return a list of services instead of a dict."""
         self.router.get("/auth/tutors/list").mock(
-            return_value=httpx.Response(200, json={"data": [{"id": 184, "name": "Maria", "is_favorite": False}]})
+            return_value=httpx.Response(200, json={"data": [{"id": 184, "name": "Maria"}]})
         )
         self.router.post("/auth/booking/calendar").mock(
             return_value=httpx.Response(200, json=[
@@ -92,7 +92,7 @@ class TestGetAvailableTeachers(BaseTest):
 
     def test_local_time_in_result_cest(self):
         self.router.get("/auth/tutors/list").mock(
-            return_value=httpx.Response(200, json={"data": [{"id": 184, "name": "Maria", "is_favorite": False}]})
+            return_value=httpx.Response(200, json={"data": [{"id": 184, "name": "Maria"}]})
         )
         # 11:00 UTC in April = 13:00 CEST (UTC+2)
         self.router.post("/auth/booking/calendar").mock(
@@ -106,7 +106,7 @@ class TestGetAvailableTeachers(BaseTest):
 
     def test_local_time_in_result_cet(self):
         self.router.get("/auth/tutors/list").mock(
-            return_value=httpx.Response(200, json={"data": [{"id": 184, "name": "Maria", "is_favorite": False}]})
+            return_value=httpx.Response(200, json={"data": [{"id": 184, "name": "Maria"}]})
         )
         # 12:00 UTC in January = 13:00 CET (UTC+1)
         self.router.post("/auth/booking/calendar").mock(

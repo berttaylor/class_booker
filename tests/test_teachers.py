@@ -34,12 +34,12 @@ def make_rules_data(names: list[str], allow_fallbacks: bool = True) -> Schedulin
 
 
 def make_cache(*teachers: tuple) -> dict:
-    """Build a cache dict from (name, id, is_favorite, status) tuples."""
+    """Build a cache dict from (name, id, status) tuples."""
     return {
         "updated": "2026-04-03",
         "teachers": {
-            name: {"id": tid, "is_favorite": fav, "status": status}
-            for name, tid, fav, status in teachers
+            name: {"id": tid, "status": status}
+            for name, tid, status in teachers
         },
     }
 
@@ -90,21 +90,20 @@ class TestPopulateTeachers:
 
     def test_creates_cache_from_scratch(self, tmp_path, monkeypatch):
         tutor_map = {
-            "184": {"name": "Maria Garcia", "is_favorite": True},
-            "159": {"name": "Carlos Lopez", "is_favorite": False},
+            "184": {"name": "Maria Garcia"},
+            "159": {"name": "Carlos Lopez"},
         }
         result = self._run(tmp_path, monkeypatch, tutor_map)
         assert "Maria Garcia" in result["teachers"]
         assert result["teachers"]["Maria Garcia"]["id"] == 184
         assert result["teachers"]["Maria Garcia"]["status"] == "ACTIVE"
-        assert result["teachers"]["Maria Garcia"]["is_favorite"] is True
         assert "Carlos Lopez" in result["teachers"]
 
     def test_adds_new_teacher(self, tmp_path, monkeypatch):
-        existing = make_cache(("Maria Garcia", 184, True, "ACTIVE"))
+        existing = make_cache(("Maria Garcia", 184, "ACTIVE"))
         tutor_map = {
-            "184": {"name": "Maria Garcia", "is_favorite": True},
-            "159": {"name": "Carlos Lopez", "is_favorite": False},
+            "184": {"name": "Maria Garcia"},
+            "159": {"name": "Carlos Lopez"},
         }
         result = self._run(tmp_path, monkeypatch, tutor_map, existing_cache=existing)
         assert "Carlos Lopez" in result["teachers"]
@@ -112,25 +111,20 @@ class TestPopulateTeachers:
 
     def test_marks_absent_teacher_removed(self, tmp_path, monkeypatch):
         existing = make_cache(
-            ("Maria Garcia", 184, True, "ACTIVE"),
-            ("Carlos Lopez", 159, False, "ACTIVE"),
+            ("Maria Garcia", 184, "ACTIVE"),
+            ("Carlos Lopez", 159, "ACTIVE"),
         )
-        tutor_map = {"184": {"name": "Maria Garcia", "is_favorite": True}}
+        tutor_map = {"184": {"name": "Maria Garcia"}}
         result = self._run(tmp_path, monkeypatch, tutor_map, existing_cache=existing)
         assert result["teachers"]["Carlos Lopez"]["status"] == "REMOVED"
         assert result["teachers"]["Maria Garcia"]["status"] == "ACTIVE"
 
     def test_marks_previously_removed_teacher_active(self, tmp_path, monkeypatch):
-        existing = make_cache(("Carlos Lopez", 159, False, "REMOVED"))
-        tutor_map = {"159": {"name": "Carlos Lopez", "is_favorite": False}}
+        existing = make_cache(("Carlos Lopez", 159, "REMOVED"))
+        tutor_map = {"159": {"name": "Carlos Lopez"}}
         result = self._run(tmp_path, monkeypatch, tutor_map, existing_cache=existing)
         assert result["teachers"]["Carlos Lopez"]["status"] == "ACTIVE"
 
-    def test_updates_is_favorite(self, tmp_path, monkeypatch):
-        existing = make_cache(("Maria Garcia", 184, False, "ACTIVE"))
-        tutor_map = {"184": {"name": "Maria Garcia", "is_favorite": True}}
-        result = self._run(tmp_path, monkeypatch, tutor_map, existing_cache=existing)
-        assert result["teachers"]["Maria Garcia"]["is_favorite"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -139,18 +133,18 @@ class TestPopulateTeachers:
 
 class TestValidateRulesAgainstCache:
     def test_all_active_ok(self):
-        cache = make_cache(("Maria Garcia", 184, True, "ACTIVE"))
+        cache = make_cache(("Maria Garcia", 184, "ACTIVE"))
         rules = make_rules_data(["Maria Garcia"])
         validate_rules_against_cache(rules, cache)  # should not raise
 
     def test_unknown_name_raises(self):
-        cache = make_cache(("Maria Garcia", 184, True, "ACTIVE"))
+        cache = make_cache(("Maria Garcia", 184, "ACTIVE"))
         rules = make_rules_data(["Unknown Teacher"])
         with pytest.raises(ValueError, match="Unknown teacher names"):
             validate_rules_against_cache(rules, cache)
 
     def test_removed_name_warns_not_raises(self, capsys):
-        cache = make_cache(("Maria Garcia", 184, True, "REMOVED"))
+        cache = make_cache(("Maria Garcia", 184, "REMOVED"))
         rules = make_rules_data(["Maria Garcia"])
         validate_rules_against_cache(rules, cache)  # should not raise
         captured = capsys.readouterr()
@@ -159,7 +153,7 @@ class TestValidateRulesAgainstCache:
 
     def test_disabled_rule_not_validated(self):
         """Disabled rules should not be checked."""
-        cache = make_cache(("Maria Garcia", 184, True, "ACTIVE"))
+        cache = make_cache(("Maria Garcia", 184, "ACTIVE"))
         rules = SchedulingRules(
             timezone="Europe/Madrid",
             booking=BookingConfig(open_offset_days=7, open_offset_minutes=30, precheck_lead_seconds=120),
@@ -175,6 +169,6 @@ class TestValidateRulesAgainstCache:
         validate_rules_against_cache(rules, cache)  # disabled rule — should not raise
 
     def test_empty_preferred_teachers_ok(self):
-        cache = make_cache(("Maria Garcia", 184, True, "ACTIVE"))
+        cache = make_cache(("Maria Garcia", 184, "ACTIVE"))
         rules = make_rules_data([], allow_fallbacks=True)
         validate_rules_against_cache(rules, cache)  # should not raise

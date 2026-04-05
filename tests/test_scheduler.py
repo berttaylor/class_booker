@@ -23,8 +23,8 @@ from app.rules import BookingRule, BookingConfig, SchedulingRules
 FAKE_CACHE = {
     "updated": "2026-04-03",
     "teachers": {
-        "Maria Garcia": {"id": 184, "is_favorite": True, "status": "ACTIVE"},
-        "Carlos Lopez": {"id": 159, "is_favorite": False, "status": "ACTIVE"},
+        "Maria Garcia": {"id": 184, "status": "ACTIVE"},
+        "Carlos Lopez": {"id": 159, "status": "ACTIVE"},
     },
 }
 

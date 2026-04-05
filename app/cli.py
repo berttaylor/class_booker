@@ -257,11 +257,10 @@ def list_tutors():
 
             populate_teachers(client)
 
-            typer.echo(f"{'ID':<10} | {'Name':<30} | {'Favorite':<10}")
-            typer.echo("-" * 55)
+            typer.echo(f"{'ID':<10} | {'Name':<30}")
+            typer.echo("-" * 43)
             for tid, data in sorted(tutor_map.items(), key=lambda x: x[1]['name']):
-                fav_status = "★" if data.get("is_favorite") else " "
-                typer.echo(f"{tid:<10} | {data.get('name'):<30} | {fav_status:<10}")
+                typer.echo(f"{tid:<10} | {data.get('name'):<30}")
     except RuntimeError:
         typer.echo("Authentication: Failure")
 

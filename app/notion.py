@@ -32,7 +32,6 @@ def _teacher_properties(entry: dict, updated_date: str) -> dict:
     """Builds the Notion properties payload for a teacher entry."""
     return {
         "Platform ID": {"number": entry["id"]},
-        "Favorite": {"checkbox": entry.get("is_favorite", False)},
         "Status": {"select": {"name": entry.get("status", "ACTIVE")}},
         "Updated": {"date": {"start": updated_date}},
     }
@@ -46,7 +45,6 @@ def _extract_page_state(page: dict) -> dict:
     props = page.get("properties", {})
     return {
         "platform_id": props.get("Platform ID", {}).get("number"),
-        "is_favorite": props.get("Favorite", {}).get("checkbox", False),
         "status": (props.get("Status", {}).get("select") or {}).get("name"),
         "updated": (props.get("Updated", {}).get("date") or {}).get("start"),
     }
@@ -56,7 +54,6 @@ def _has_changes(page_state: dict, entry: dict, updated_date: str) -> bool:
     """Returns True if the cache entry differs from the current Notion page state."""
     return (
         page_state["platform_id"] != entry["id"]
-        or page_state["is_favorite"] != entry.get("is_favorite", False)
         or page_state["status"] != entry.get("status", "ACTIVE")
         or page_state["updated"] != updated_date
     )

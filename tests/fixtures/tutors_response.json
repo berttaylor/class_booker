@@ -1,7 +1,7 @@
 {
   "data": [
-    {"id": 184, "name": "Maria Garcia", "is_favorite": true},
-    {"id": 159, "name": "Carlos Lopez", "is_favorite": false},
-    {"id": 12, "name": "Ana Martinez", "is_favorite": false}
+    {"id": 184, "name": "Maria Garcia"},
+    {"id": 159, "name": "Carlos Lopez"},
+    {"id": 12, "name": "Ana Martinez"}
   ]
 }

@@ -19,7 +19,7 @@ FAKE_SCHEDULE = {
 
 FAKE_CACHE = {
     "updated": "2026-04-05",
-    "teachers": {f"Teacher {i}": {"id": i, "is_favorite": False, "status": "ACTIVE"} for i in range(15)},
+    "teachers": {f"Teacher {i}": {"id": i, "status": "ACTIVE"} for i in range(15)},
 }
 
 

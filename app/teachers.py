@@ -32,7 +32,7 @@ def populate_teachers(client: BookingClient) -> None:
     - Absent from API response: status set to REMOVED
     Saves the updated cache to teachers.json.
     """
-    tutor_map = get_tutors_map(client)  # {id_str: {"name": ..., "is_favorite": ...}}
+    tutor_map = get_tutors_map(client)  # {id_str: {"name": ...}}
 
     cache = load_teacher_cache()
     teachers = cache.get("teachers", {})
@@ -50,12 +50,8 @@ def populate_teachers(client: BookingClient) -> None:
         if name not in teachers:
             teachers[name] = {
                 "id": int(next(tid for tid, d in tutor_map.items() if d["name"] == name)),
-                "is_favorite": data.get("is_favorite", False),
                 "status": "ACTIVE",
             }
-        else:
-            # Update is_favorite in case it changed
-            teachers[name]["is_favorite"] = data.get("is_favorite", False)
 
     cache["teachers"] = teachers
     save_teacher_cache(cache)
