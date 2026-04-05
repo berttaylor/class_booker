@@ -31,7 +31,7 @@ This is a Python CLI tool (Typer) that automates booking Spanish classes on worl
 app/
   client.py          — BookingClient: thin httpx wrapper (shared by everything)
   config.py          — AppConfig (from config.yaml), Settings (from .env)
-  rules.py           — Pydantic models for scheduling_rules.yml
+  rules.py           — Pydantic models for scheduling_rules/*.yml
   teachers.py        — Teacher cache load/save/validate, populate_teachers()
   utils.py           — normalize_datetime(), get_server_time()
   cli.py             — Typer commands (thin: no business logic)
@@ -54,10 +54,10 @@ web.py               — Flask schedule editor (browser UI with validation)
 **Configuration layers:**
 - `config.yaml` — API base URL and endpoint paths → `AppConfig` via `app/config.py`
 - `.env` — login credentials, optional Pushover tokens → `Settings`
-- `scheduling_rules.yml` — automated booking rules → `SchedulingRules` via `app/rules.py` (edit directly or via `python web.py`)
+- `scheduling_rules/bert.yml` — automated booking rules → `SchedulingRules` via `app/rules.py` (edit directly or via `python web.py`)
 
 **Scheduled jobs** (two independent launchd jobs, all managed by `setup.sh`):
-- `run-due` (:29, :59) — reads local `scheduling_rules.yml`, checks for due bookings, books.
+- `run-due` (:29, :59) — reads local `scheduling_rules/bert.yml`, checks for due bookings, books.
 - `populate-teachers` (03:00 daily) — fetches tutors from the booking API, merges into `data/teachers.json`.
 
 **`BookingRule` schema** (`app/rules.py`): each rule has `label` (e.g. `"Monday Midday"`), `weekday` (single string, e.g. `"mon"`), `start_time` (HH:MM, on the hour or half-hour), `slots` (1 or 2), `preferred_teachers` (list of teacher name strings, default `[]`), and `allow_fallbacks`. The `id` property is computed as `f"{weekday}_{label}"`. `slot_times()` expands to `["13:00"]` or `["13:00", "13:30"]` depending on `slots`. Pydantic validators enforce all constraints at load time.

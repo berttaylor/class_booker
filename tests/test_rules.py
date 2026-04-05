@@ -4,7 +4,7 @@ from pathlib import Path
 
 from app.rules import load_scheduling_rules, SchedulingRules, BookingRule
 
-RULES_FILE = Path(__file__).parent.parent / "scheduling_rules.yml"
+RULES_FILE = Path(__file__).parent.parent / "scheduling_rules" / "bert.yml"
 
 
 class TestLoadSchedulingRules:

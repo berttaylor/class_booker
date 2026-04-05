@@ -14,7 +14,7 @@ Python CLI tool that automates Spanish class booking by calling the booking plat
     ```bash
     pip install -r requirements.txt
     ```
-4.  Run the setup script — this creates your `.env`, `scheduling_rules.yml`, and installs three scheduled jobs:
+4.  Run the setup script — this creates your `.env`, `scheduling_rules/bert.yml`, and installs three scheduled jobs:
     ```bash
     ./setup.sh
     ```
@@ -31,23 +31,49 @@ Python CLI tool that automates Spanish class booking by calling the booking plat
 
 | Job | Schedule | Responsibility |
 |---|---|---|
-| `run-due` | Every hour at :29 and :59 | Reads local `scheduling_rules.yml`, checks for due bookings, books. |
+| `run-due` | Every hour at :29 and :59 | Reads local `scheduling_rules/bert.yml`, checks for due bookings, books. |
 | `populate-teachers` | Daily at 03:00 | Fetches tutors from the booking API, merges into `data/teachers.json`. |
 
 ### Rule format
 
-Each rule books 1 or 2 consecutive 30-minute slots on a given weekday. Edit `scheduling_rules.yml` directly — teacher names must match exactly as they appear in `data/teachers.json`. Use `python web.py` to edit and validate via a browser UI.
+Each rule books 1 or 2 consecutive 30-minute slots on a given weekday. Edit `scheduling_rules/bert.yml` directly — teacher names must match exactly as they appear in `data/teachers.json`. Use `python web.py` to edit and validate via a browser UI.
 
 ```yaml
-- label: Monday Midday  # combined with weekday → rule ID (e.g. mon_Monday Midday)
-  weekday: mon          # mon, tue, wed, thu, fri, sat, sun
-  enabled: true
-  start_time: "13:00"   # HH:MM, must be on the hour or half-hour
-  slots: 2              # 1 books 13:00 only; 2 books 13:00 and 13:30
-  preferred_teachers:   # tried in order; must match names in data/teachers.json exactly
-    - "Maria Garcia"
-    - "Ana Lopez"
-  allow_fallbacks: true  # fall back to any available teacher if preferred unavailable
+timezone: Europe/Madrid
+
+booking:
+  open_offset_days: 7
+  open_offset_minutes: 30
+  precheck_lead_seconds: 120
+
+rules:
+  # MONDAY
+  - label: midday
+    weekday: mon
+    enabled: true
+    start_time: "13:00"
+    slots: 2
+    preferred_teachers:
+      - "Teacher Name"
+      - "Another Teacher"
+    allow_fallbacks: true
+
+  - label: evening
+    weekday: mon
+    enabled: false
+    start_time: "18:00"
+    slots: 2
+    allow_fallbacks: true
+
+  # Add more rules following the same pattern.
+  # label:              short name for the rule (e.g. "midday", "evening")
+  # weekday:            one of mon, tue, wed, thu, fri, sat, sun
+  # enabled:            true/false
+  # start_time:         "HH:MM" - must be on the hour or half-hour
+  # slots:              1 or 2 consecutive 30-min bookings starting at start_time
+  # preferred_teachers: optional. teacher names in priority order - must match names in data/teachers.json exactly
+  #                     run `python main.py populate-teachers` to generate data/teachers.json.
+  # allow_fallbacks:    if true, fall back to any available teacher when preferred are unavailable
 ```
 
 ## Usage

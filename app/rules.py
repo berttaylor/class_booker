@@ -83,7 +83,7 @@ class SchedulingRules(BaseModel):
         return v
 
 
-def load_scheduling_rules(path: str = "scheduling_rules.yml") -> SchedulingRules:
+def load_scheduling_rules(path: str = "scheduling_rules/bert.yml") -> SchedulingRules:
     with open(path, "r") as f:
         data = yaml.safe_load(f)
     return SchedulingRules(**data)

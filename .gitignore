@@ -164,7 +164,6 @@ logs/
 .DS_Store
 
 # User level stuff
-scheduling_rules.backup.yml
-scheduling_rules.yml
+scheduling_rules/*.yml
 *.plist
 

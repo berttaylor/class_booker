@@ -10,7 +10,7 @@ import yaml
 from app.rules import load_scheduling_rules
 from app.teachers import load_teacher_cache, validate_rules_against_cache
 
-RULES_PATH = Path(__file__).parent / "scheduling_rules.yml"
+RULES_PATH = Path(__file__).parent / "scheduling_rules" / "bert.yml"
 
 app = Flask(__name__)
 
@@ -40,7 +40,7 @@ PAGE = """
 </head>
 <body>
   <header>
-    <h1>scheduling_rules.yml</h1>
+    <h1>scheduling_rules/bert.yml</h1>
     <span id="status">unsaved</span>
     <button onclick="save()">Validate &amp; Save</button>
   </header>

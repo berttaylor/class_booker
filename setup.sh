@@ -20,13 +20,50 @@ else
     echo "  → Open .env and fill in your LOGIN_EMAIL and LOGIN_PASSWORD"
 fi
 
-# scheduling_rules.yml
-if [ -f "$SCRIPT_DIR/scheduling_rules.yml" ]; then
-    echo "✓ scheduling_rules.yml already exists — skipping"
+# scheduling_rules/bert.yml
+mkdir -p "$SCRIPT_DIR/scheduling_rules"
+if [ -f "$SCRIPT_DIR/scheduling_rules/bert.yml" ]; then
+    echo "✓ scheduling_rules/bert.yml already exists — skipping"
 else
-    cp "$SCRIPT_DIR/scheduling_rules.template.yml" "$SCRIPT_DIR/scheduling_rules.yml"
-    echo "✓ Created scheduling_rules.yml from template"
-    echo "  → Open scheduling_rules.yml and configure your lesson schedule"
+    cat > "$SCRIPT_DIR/scheduling_rules/bert.yml" <<'TMPL'
+timezone: Europe/Madrid
+
+booking:
+  open_offset_days: 7
+  open_offset_minutes: 30
+  precheck_lead_seconds: 120
+
+rules:
+  # MONDAY
+  - label: midday
+    weekday: mon
+    enabled: true
+    start_time: "13:00"
+    slots: 2
+    preferred_teachers:
+      - "Teacher Name"
+      - "Another Teacher"
+    allow_fallbacks: true
+
+  - label: evening
+    weekday: mon
+    enabled: false
+    start_time: "18:00"
+    slots: 2
+    allow_fallbacks: true
+
+  # Add more rules following the same pattern.
+  # label:              short name for the rule (e.g. "midday", "evening")
+  # weekday:            one of mon, tue, wed, thu, fri, sat, sun
+  # enabled:            true/false
+  # start_time:         "HH:MM" - must be on the hour or half-hour
+  # slots:              1 or 2 consecutive 30-min bookings starting at start_time
+  # preferred_teachers: optional. teacher names in priority order - must match names in data/teachers.json exactly
+  #                     run `python main.py populate-teachers` to generate data/teachers.json.
+  # allow_fallbacks:    if true, fall back to any available teacher when preferred are unavailable
+TMPL
+    echo "✓ Created scheduling_rules/bert.yml from template"
+    echo "  → Open scheduling_rules/bert.yml and configure your lesson schedule"
 fi
 
 # logs and runners directories
