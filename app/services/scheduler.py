@@ -347,7 +347,11 @@ def run_due_process(force: bool = False, force_soft: bool = False):
     try:
         notion_schedule = fetch_schedule_from_notion()
         if notion_schedule:
+            schedule_source = "notion"
             cache_schedule_locally(notion_schedule)
+        else:
+            schedule_source = "local cache"
+
 
         rules_data = load_scheduling_rules()
 
@@ -388,7 +392,7 @@ def run_due_process(force: bool = False, force_soft: bool = False):
                 total_seconds = int(time_until.total_seconds())
                 hours, remainder = divmod(total_seconds, 3600)
                 minutes, seconds = divmod(remainder, 60)
-                print(f"[{timestamp}] Nothing to book")
+                print(f"[{timestamp}] Nothing to book ({schedule_source})")
                 print(f"  Next window: {next_open_dt.strftime('%Y-%m-%d %H:%M')} (in {hours}h {minutes}m {seconds}s)")
                 print(f"  For class:   {next_lesson_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})")
             else:
@@ -396,7 +400,7 @@ def run_due_process(force: bool = False, force_soft: bool = False):
             return
 
         # Phase 2: something is due — authenticate and sync time
-        print(f"[{timestamp}] Booking due — processing {len(due_rules)} rule(s)")
+        print(f"[{timestamp}] Booking due ({schedule_source}) — processing {len(due_rules)} rule(s)")
         token = login(client)
         if not token:
             print("  Auth:   FAILED — check credentials in .env")

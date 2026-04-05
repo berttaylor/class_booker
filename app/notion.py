@@ -68,7 +68,11 @@ def _fetch_all_teacher_pages(database_id: str) -> dict[str, dict]:
                 json=body,
                 timeout=15,
             )
+            if response.status_code == 401:
+                print("  Notion: teachers fetch failed (check NOTION_API_TOKEN)")
+                return existing
             if response.status_code != 200:
+                print(f"  Notion: teachers fetch failed (HTTP {response.status_code})")
                 return existing
             data = response.json()
             for page in data.get("results", []):
@@ -105,6 +109,7 @@ def fetch_schedule_from_notion() -> dict | None:
     Teacher relation IDs are resolved to names via the Teachers database.
     """
     if not settings.notion_api_token or not settings.notion_schedule_database_id:
+        print("  Notion: schedule DB not configured — using local scheduling_rules.yml")
         return None
 
     schedule_db_id = settings.notion_schedule_database_id
@@ -122,7 +127,11 @@ def fetch_schedule_from_notion() -> dict | None:
             json=body,
             timeout=15,
         )
+        if response.status_code == 401:
+            print("  Notion: unauthorized (check NOTION_API_TOKEN) — using local scheduling_rules.yml")
+            return None
         if response.status_code != 200:
+            print(f"  Notion: schedule fetch failed (HTTP {response.status_code}) — using local scheduling_rules.yml")
             return None
 
         data = response.json()
@@ -187,6 +196,7 @@ def fetch_schedule_from_notion() -> dict | None:
             })
 
         if not rules:
+            print("  Notion: schedule DB returned no rows — using local scheduling_rules.yml")
             return None
 
         return {
@@ -199,7 +209,8 @@ def fetch_schedule_from_notion() -> dict | None:
             "rules": rules,
         }
 
-    except Exception:
+    except Exception as e:
+        print(f"  Notion: could not fetch schedule ({e}) — using local scheduling_rules.yml")
         return None
 
 
@@ -216,6 +227,7 @@ def log_run_to_notion(status: str, detail: str, rule: str = "", teacher: str = "
     Silent no-op if NOTION_RUN_LOG_DATABASE_ID is not set. Never raises.
     """
     if not settings.notion_api_token or not settings.notion_run_log_database_id:
+        print("  Notion: run log DB not configured — skipping log entry")
         return
 
     now = date.today().isoformat()
@@ -252,6 +264,7 @@ def sync_teachers_to_notion(cache: dict) -> bool:
     Silently skips if NOTION_API_TOKEN or NOTION_TEACHERS_DATABASE_ID are not set.
     """
     if not settings.notion_api_token or not settings.notion_teachers_database_id:
+        print("  Notion: teachers DB not configured — skipping sync")
         return False
 
     db_id = settings.notion_teachers_database_id
@@ -303,7 +316,8 @@ def sync_teachers_to_notion(cache: dict) -> bool:
 
         print(f"  Notion: {created} created, {updated} updated, {skipped} unchanged")
 
-    except Exception:
+    except Exception as e:
+        print(f"  Notion: teachers sync failed ({e})")
         return False
 
     return success
