@@ -24,8 +24,8 @@ class Settings(BaseSettings):
     service_name: str = Path.cwd().name
 
     # Secrets from .env
-    login_email: str | None = None
-    login_password: str | None = None
+    teacher_sync_login_email: str | None = None
+    teacher_sync_login_password: str | None = None
 
     # Set to false on secondary clones to skip the daily teacher sync (primary handles it).
     # When false, teachers_cache_path must be set to an absolute path pointing at the

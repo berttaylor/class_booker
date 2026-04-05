@@ -7,7 +7,7 @@ from typing import Optional
 from app.client import BookingClient
 from app.config import app_config, settings
 
-TOKEN_CACHE_FILE = Path(".token_cache.json")
+TOKEN_CACHE_FILE = Path(__file__).parent.parent.parent / "cache" / ".teacher_sync_token_cache.json"
 
 
 def is_token_expired(token: str, buffer_seconds: int = 30) -> bool:
@@ -67,8 +67,8 @@ def login(client: BookingClient, use_cache: bool = True) -> Optional[str]:
             return cached_token
 
     data = {
-        "email": settings.login_email,
-        "password": settings.login_password
+        "email": settings.teacher_sync_login_email,
+        "password": settings.teacher_sync_login_password
     }
 
     response = client.post(app_config.login_endpoint, json=data)

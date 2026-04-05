@@ -4,8 +4,8 @@ from pathlib import Path
 
 # Patch env BEFORE any app module is imported — avoids needing a real .env file.
 # pydantic-settings reads these at class instantiation time (module load).
-os.environ.setdefault("LOGIN_EMAIL", "test@example.com")
-os.environ.setdefault("LOGIN_PASSWORD", "test-password-123")
+os.environ.setdefault("TEACHER_SYNC_LOGIN_EMAIL", "test@example.com")
+os.environ.setdefault("TEACHER_SYNC_LOGIN_PASSWORD", "test-password-123")
 
 import pytest
 import respx

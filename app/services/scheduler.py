@@ -398,7 +398,7 @@ def run_due_process(force: bool = False, force_soft: bool = False):
         now_utc, drift = get_synced_now(client)
         now_local = now_utc.astimezone(local_tz)
         drift_icon = "✓" if abs(drift) < 5 else "✗"
-        print(f"  Auth:   {settings.login_email} ✓  (drift: {drift:+.3f}s {drift_icon})")
+        print(f"  Auth:   {settings.teacher_sync_login_email} ✓  (drift: {drift:+.3f}s {drift_icon})")
 
         # Re-evaluate with synced time for accurate wait calculations
         due_rules, rule_lesson_times, rule_open_times, _ = _evaluate_rules(rules_data, now_local)

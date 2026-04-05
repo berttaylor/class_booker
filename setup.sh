@@ -16,7 +16,7 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
 else
     cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
     echo "✓ Created .env from .env.example"
-    echo "  → Open .env and fill in your LOGIN_EMAIL and LOGIN_PASSWORD"
+    echo "  → Open .env and fill in the TEACHER_SYNC_LOGIN_EMAIL and TEACHER_SYNC_LOGIN_PASSWORD"
 fi
 
 # scheduling_rules.yml
