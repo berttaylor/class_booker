@@ -29,16 +29,16 @@ class Settings(BaseSettings):
 
     # Set to false on secondary clones to skip the daily teacher sync (primary handles it).
     # When false, teachers_cache_path must be set to an absolute path pointing at the
-    # primary clone's teachers.json.
+    # primary clone's data/teachers.json.
     populate_teachers_enabled: bool = True
-    teachers_cache_path: str = "teachers.json"
+    teachers_cache_path: str = "data/teachers.json"
 
     @model_validator(mode="after")
     def check_secondary_cache_path(self) -> "Settings":
-        if not self.populate_teachers_enabled and self.teachers_cache_path == "teachers.json":
+        if not self.populate_teachers_enabled and self.teachers_cache_path == "data/teachers.json":
             raise ValueError(
                 "POPULATE_TEACHERS=false requires TEACHERS_CACHE_PATH to be set to an "
-                "absolute path pointing at the primary clone's teachers.json"
+                "absolute path pointing at the primary clone's data/teachers.json"
             )
         return self
 

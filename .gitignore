@@ -153,7 +153,7 @@ cython_debug/
 
 # Project-specific caches
 .token_cache.json
-teachers.json
+data/teachers.json
 
 #Run lock
 .run_due.lock

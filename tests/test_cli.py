@@ -69,7 +69,7 @@ class TestSettingsValidation:
         from pydantic import ValidationError
         from app.config import Settings
         with pytest.raises(ValidationError, match="TEACHERS_CACHE_PATH"):
-            Settings(populate_teachers_enabled=False, teachers_cache_path="teachers.json")
+            Settings(populate_teachers_enabled=False, teachers_cache_path="data/teachers.json")
 
     def test_secondary_with_absolute_cache_path_ok(self):
         """POPULATE_TEACHERS=false with an absolute path is valid."""
@@ -82,4 +82,4 @@ class TestSettingsValidation:
         from app.config import Settings
         s = Settings()
         assert s.populate_teachers_enabled is True
-        assert s.teachers_cache_path == "teachers.json"
+        assert s.teachers_cache_path == "data/teachers.json"

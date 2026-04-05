@@ -19,7 +19,7 @@ Python CLI tool that automates Spanish class booking by calling the booking plat
     ./setup.sh
     ```
 5.  Fill in your credentials in `.env`.
-6.  Fetch the teacher list and create `teachers.json` (required before `run-due` will work):
+6.  Fetch the teacher list and create `data/teachers.json` (required before `run-due` will work):
     ```bash
     python main.py populate-teachers
     ```
@@ -32,11 +32,11 @@ Python CLI tool that automates Spanish class booking by calling the booking plat
 | Job | Schedule | Responsibility |
 |---|---|---|
 | `run-due` | Every hour at :29 and :59 | Reads local `scheduling_rules.yml`, checks for due bookings, books. |
-| `populate-teachers` | Daily at 03:00 | Fetches tutors from the booking API, merges into `teachers.json`. |
+| `populate-teachers` | Daily at 03:00 | Fetches tutors from the booking API, merges into `data/teachers.json`. |
 
 ### Rule format
 
-Each rule books 1 or 2 consecutive 30-minute slots on a given weekday. Edit `scheduling_rules.yml` directly — teacher names must match exactly as they appear in `teachers.json`. Use `python web.py` to edit and validate via a browser UI.
+Each rule books 1 or 2 consecutive 30-minute slots on a given weekday. Edit `scheduling_rules.yml` directly — teacher names must match exactly as they appear in `data/teachers.json`. Use `python web.py` to edit and validate via a browser UI.
 
 ```yaml
 - label: Monday Midday  # combined with weekday → rule ID (e.g. mon_Monday Midday)
@@ -44,7 +44,7 @@ Each rule books 1 or 2 consecutive 30-minute slots on a given weekday. Edit `sch
   enabled: true
   start_time: "13:00"   # HH:MM, must be on the hour or half-hour
   slots: 2              # 1 books 13:00 only; 2 books 13:00 and 13:30
-  preferred_teachers:   # tried in order; must match names in teachers.json exactly
+  preferred_teachers:   # tried in order; must match names in data/teachers.json exactly
     - "Maria Garcia"
     - "Ana Lopez"
   allow_fallbacks: true  # fall back to any available teacher if preferred unavailable
@@ -63,12 +63,12 @@ View a teacher's availability calendar:
 python main.py teacher-calendar --teacher-id "81"
 ```
 
-Fetch all teachers and update `teachers.json`:
+Fetch all teachers and update `data/teachers.json`:
 ```bash
 python main.py populate-teachers
 ```
 
-List all tutors (also refreshes `teachers.json`):
+List all tutors (also refreshes `data/teachers.json`):
 ```bash
 python main.py list-tutors
 ```

@@ -56,7 +56,8 @@ class TestLoadTeacherCache:
     def test_returns_cache_if_present(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         data = {"updated": "2026-01-01", "teachers": {"Maria Garcia": {"id": 184}}}
-        (tmp_path / "teachers.json").write_text(json.dumps(data))
+        (tmp_path / "data").mkdir()
+        (tmp_path / "data" / "teachers.json").write_text(json.dumps(data))
         assert load_teacher_cache() == data
 
 
@@ -66,7 +67,7 @@ class TestSaveTeacherCache:
         from freezegun import freeze_time
         with freeze_time("2026-04-03"):
             save_teacher_cache({"teachers": {}})
-        result = json.loads((tmp_path / "teachers.json").read_text())
+        result = json.loads((tmp_path / "data" / "teachers.json").read_text())
         assert result["updated"] == "2026-04-03"
 
 
@@ -78,7 +79,8 @@ class TestPopulateTeachers:
     def _run(self, tmp_path, monkeypatch, tutor_map, existing_cache=None):
         monkeypatch.chdir(tmp_path)
         if existing_cache is not None:
-            (tmp_path / "teachers.json").write_text(json.dumps(existing_cache))
+            (tmp_path / "data").mkdir(exist_ok=True)
+            (tmp_path / "data" / "teachers.json").write_text(json.dumps(existing_cache))
 
         from app.client import BookingClient
         client = BookingClient(base_url="http://localhost:9999")
@@ -86,7 +88,7 @@ class TestPopulateTeachers:
         with patch("app.teachers.get_tutors_map", return_value=tutor_map):
             populate_teachers(client)
 
-        return json.loads((tmp_path / "teachers.json").read_text())
+        return json.loads((tmp_path / "data" / "teachers.json").read_text())
 
     def test_creates_cache_from_scratch(self, tmp_path, monkeypatch):
         tutor_map = {

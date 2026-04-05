@@ -58,15 +58,15 @@ web.py               — Flask schedule editor (browser UI with validation)
 
 **Scheduled jobs** (two independent launchd jobs, all managed by `setup.sh`):
 - `run-due` (:29, :59) — reads local `scheduling_rules.yml`, checks for due bookings, books.
-- `populate-teachers` (03:00 daily) — fetches tutors from the booking API, merges into `teachers.json`.
+- `populate-teachers` (03:00 daily) — fetches tutors from the booking API, merges into `data/teachers.json`.
 
 **`BookingRule` schema** (`app/rules.py`): each rule has `label` (e.g. `"Monday Midday"`), `weekday` (single string, e.g. `"mon"`), `start_time` (HH:MM, on the hour or half-hour), `slots` (1 or 2), `preferred_teachers` (list of teacher name strings, default `[]`), and `allow_fallbacks`. The `id` property is computed as `f"{weekday}_{label}"`. `slot_times()` expands to `["13:00"]` or `["13:00", "13:30"]` depending on `slots`. Pydantic validators enforce all constraints at load time.
 
-**Teacher cache** (`app/teachers.py`): `teachers.json` (gitignored, project root) maps teacher name → `{id, status}`. Names are never deleted — absent teachers are marked `REMOVED`. Updated by `populate-teachers`. `run-due` checks the cache on startup: exits with a message if missing, and raises a `ValueError` if any name in the rules is unknown.
+**Teacher cache** (`app/teachers.py`): `data/teachers.json` (gitignored, project root) maps teacher name → `{id, status}`. Names are never deleted — absent teachers are marked `REMOVED`. Updated by `populate-teachers`. `run-due` checks the cache on startup: exits with a message if missing, and raises a `ValueError` if any name in the rules is unknown.
 
 **Scheduler** (`services/scheduler.py` → `run_due_process`): two-phase design — Phase 1 uses the local clock only to check if any rule is due (no API calls); Phase 2 authenticates and syncs server time only when a booking is actually due. `_evaluate_rules` expands each rule into individual slot entries keyed by `slot_key` (e.g. `wed_midday_slot1`), returning `(rule, slot_key)` tuples in `due_rules` and dicts keyed by `slot_key`. Uses a file lock (`.run_due.lock`) to prevent concurrent runs. A random delay of 15–30 seconds is applied before each booking attempt to simulate natural behaviour.
 
-**Schedule editor** (`web.py`): Flask app serving a CodeMirror YAML editor at `http://localhost:5001`. Validates against `SchedulingRules` schema, checks teacher names against `teachers.json`, and detects duplicate rule IDs before saving.
+**Schedule editor** (`web.py`): Flask app serving a CodeMirror YAML editor at `http://localhost:5001`. Validates against `SchedulingRules` schema, checks teacher names against `data/teachers.json`, and detects duplicate rule IDs before saving.
 
 ## Testing
 

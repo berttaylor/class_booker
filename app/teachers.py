@@ -18,8 +18,9 @@ def load_teacher_cache() -> dict:
 
 
 def save_teacher_cache(cache: dict) -> None:
-    """Writes cache to teachers.json with today's date in 'updated'."""
+    """Writes cache to data/teachers.json with today's date in 'updated'."""
     cache["updated"] = date.today().isoformat()
+    TEACHERS_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(TEACHERS_CACHE_PATH, "w") as f:
         json.dump(cache, f, indent=2)
 
@@ -30,7 +31,7 @@ def populate_teachers(client: BookingClient) -> None:
     - New teachers: added as ACTIVE
     - Present in API response: status set to ACTIVE
     - Absent from API response: status set to REMOVED
-    Saves the updated cache to teachers.json.
+    Saves the updated cache to data/teachers.json.
     """
     tutor_map = get_tutors_map(client)  # {id_str: {"name": ...}}
 
@@ -71,7 +72,7 @@ def validate_rules_against_cache(rules_data, cache: dict) -> None:
             if name not in teachers:
                 unknown.append(f"'{name}' (rule: {rule.id})")
             elif teachers[name]["status"] == "REMOVED":
-                print(f"  Warning: '{name}' in rule '{rule.id}' is marked REMOVED in teachers.json")
+                print(f"  Warning: '{name}' in rule '{rule.id}' is marked REMOVED in data/teachers.json")
 
     if unknown:
         raise ValueError(f"Unknown teacher names in scheduling rules: {', '.join(unknown)}")

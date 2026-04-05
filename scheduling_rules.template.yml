@@ -30,6 +30,6 @@ rules:
   # enabled:            true/false
   # start_time:         "HH:MM" - must be on the hour or half-hour
   # slots:              1 or 2 consecutive 30-min bookings starting at start_time
-  # preferred_teachers: optional. teacher names in priority order - must match names in teachers.json exactly
-  #                     run `python main.py populate-teachers` to generate teachers.json.
+  # preferred_teachers: optional. teacher names in priority order - must match names in data/teachers.json exactly
+  #                     run `python main.py populate-teachers` to generate data/teachers.json.
   # allow_fallbacks:    if true, fall back to any available teacher when preferred are unavailable
