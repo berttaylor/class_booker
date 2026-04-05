@@ -717,3 +717,43 @@ class TestTeacherCache:
                 run_due_process()
 
         assert pop_fn.called
+
+
+# ---------------------------------------------------------------------------
+# Notion schedule integration
+# ---------------------------------------------------------------------------
+
+class TestNotionScheduleIntegration:
+    def test_uses_notion_schedule_when_available(self):
+        """If fetch_schedule_from_notion returns data, cache_schedule_locally is called."""
+        rules = make_rules(weekday="wed", start_time="13:00")
+        notion_data = {"timezone": "Europe/Madrid", "booking": {}, "rules": []}
+
+        with freeze_time("2026-04-08T10:00:00+00:00"):
+            with patch.object(sched_module, "fetch_schedule_from_notion", return_value=notion_data) as fetch_fn, \
+                 patch.object(sched_module, "cache_schedule_locally") as cache_fn, \
+                 patch.object(sched_module, "load_scheduling_rules", return_value=rules), \
+                 patch.object(sched_module, "load_teacher_cache", return_value=FAKE_CACHE), \
+                 patch.object(sched_module, "validate_rules_against_cache"), \
+                 patch.object(sched_module, "acquire_lock", return_value=MagicMock()), \
+                 patch.object(sched_module, "release_lock"):
+                run_due_process()
+
+        fetch_fn.assert_called_once()
+        cache_fn.assert_called_once_with(notion_data)
+
+    def test_falls_back_to_yaml_when_notion_unavailable(self):
+        """If fetch_schedule_from_notion returns None, cache_schedule_locally is not called."""
+        rules = make_rules(weekday="wed", start_time="13:00")
+
+        with freeze_time("2026-04-08T10:00:00+00:00"):
+            with patch.object(sched_module, "fetch_schedule_from_notion", return_value=None), \
+                 patch.object(sched_module, "cache_schedule_locally") as cache_fn, \
+                 patch.object(sched_module, "load_scheduling_rules", return_value=rules), \
+                 patch.object(sched_module, "load_teacher_cache", return_value=FAKE_CACHE), \
+                 patch.object(sched_module, "validate_rules_against_cache"), \
+                 patch.object(sched_module, "acquire_lock", return_value=MagicMock()), \
+                 patch.object(sched_module, "release_lock"):
+                run_due_process()
+
+        cache_fn.assert_not_called()

@@ -31,7 +31,9 @@ This is a Python CLI tool (Typer) that automates booking Spanish classes on worl
 app/
   client.py          — BookingClient: thin httpx wrapper (shared by everything)
   config.py          — AppConfig (from config.yaml), Settings (from .env)
+  notion.py          — All Notion API calls (teachers sync, schedule fetch, run log)
   rules.py           — Pydantic models for scheduling_rules.yml
+  teachers.py        — Teacher cache load/save/validate, populate_teachers()
   utils.py           — normalize_datetime(), get_server_time()
   cli.py             — Typer commands (thin: no business logic)
   api/
@@ -51,10 +53,15 @@ app/
 
 **Configuration layers:**
 - `config.yaml` — API base URL and endpoint paths → `AppConfig` via `app/config.py`
-- `.env` — login credentials (`LOGIN_EMAIL`, `LOGIN_PASSWORD`) → `Settings`
-- `scheduling_rules.yml` — automated booking rules → `SchedulingRules` via `app/rules.py`
+- `.env` — login credentials, optional Notion tokens → `Settings`
+- `scheduling_rules.yml` — automated booking rules → `SchedulingRules` via `app/rules.py` (local cache, overwritten from Notion on each `run-due`)
 
-**`BookingRule` schema** (`app/rules.py`): each rule has `label` (e.g. `"midday"`), `weekday` (single string, e.g. `"mon"`), `start_time` (HH:MM, on the hour or half-hour), `slots` (1 or 2), `preferred_teachers` (list of teacher name strings), and `allow_fallbacks`. The `id` property is computed as `f"{weekday}_{label}"`. `slot_times()` expands to `["13:00"]` or `["13:00", "13:30"]` depending on `slots`. Pydantic validators enforce all constraints at load time.
+**Notion integration** (`app/notion.py`): optional, activated by setting env vars. All Notion calls follow the same pattern — credential check first (silent no-op if not configured), try/except wrapper, never raises. Three databases:
+- `NOTION_TEACHERS_DATABASE_ID` — teachers are dual-written here on `populate-teachers` (PATCH existing, POST new, skip unchanged)
+- `NOTION_SCHEDULE_DATABASE_ID` — schedule is fetched on every `run-due` and written to `scheduling_rules.yml` before `load_scheduling_rules()` runs; falls back to existing YAML if Notion unreachable
+- `NOTION_RUN_LOG_DATABASE_ID` — a row is created for every notable run outcome (Booked, Failed, Error); silent runs are not logged
+
+**`BookingRule` schema** (`app/rules.py`): each rule has `label` (e.g. `"Monday Midday"` — matches the Name column in the Notion Schedule database), `weekday` (single string, e.g. `"mon"`), `start_time` (HH:MM, on the hour or half-hour), `slots` (1 or 2), `preferred_teachers` (list of teacher name strings, default `[]`), and `allow_fallbacks`. The `id` property is computed as `f"{weekday}_{label}"`. `slot_times()` expands to `["13:00"]` or `["13:00", "13:30"]` depending on `slots`. Pydantic validators enforce all constraints at load time.
 
 **Teacher cache** (`app/teachers.py`): `teachers.json` (gitignored, project root) maps teacher name → `{id, is_favorite, status}`. Names are never deleted — absent teachers are marked `REMOVED`. Updated by `list-tutors` and the `populate-teachers` CLI command. `run-due` checks the cache on startup: exits with a message if missing, auto-refreshes if older than `UPDATE_TEACHERS_FREQUENCY_DAYS` (default 7, set in `.env`), and raises a `ValueError` if any name in the rules is unknown.
 

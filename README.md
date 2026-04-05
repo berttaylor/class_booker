@@ -18,25 +18,39 @@ Python CLI tool that automates Spanish class booking by calling the booking plat
     ```bash
     ./setup.sh
     ```
-5.  Fill in your credentials in `.env` and configure your lesson schedule in `scheduling_rules.yml`.
+5.  Fill in your credentials in `.env`.
 6.  Fetch the teacher list and create `teachers.json` (required before `run-due` will work):
     ```bash
     python main.py populate-teachers
     ```
-7.  Update `scheduling_rules.yml` with teacher names from `teachers.json`, then run `run-due`.
-8.  Configure `config.yaml` if needed (defaults provided for worldsacross.com).
+7.  Configure `config.yaml` if needed (defaults provided for worldsacross.com).
+
+### Notion integration (optional)
+
+The app can sync teachers, read the schedule, and log booking outcomes to Notion. Add these to `.env`:
+
+```
+NOTION_API_TOKEN=secret_xxx
+NOTION_TEACHERS_DATABASE_ID=xxx   # Teachers DB — synced on populate-teachers
+NOTION_SCHEDULE_DATABASE_ID=xxx   # Schedule DB — read on every run-due
+NOTION_RUN_LOG_DATABASE_ID=xxx    # Run Log DB — bookings/errors written here
+```
+
+If these are not set the app works exactly as before — all Notion calls are silent no-ops.
+
+When `NOTION_SCHEDULE_DATABASE_ID` is set, the schedule is fetched from Notion on every `run-due` and written to `scheduling_rules.yml` as a local cache. If Notion is unreachable, the existing `scheduling_rules.yml` is used as a fallback.
 
 ### Rule format
 
-Each rule in `scheduling_rules.yml` books 1 or 2 consecutive 30-minute slots on a given weekday. Teacher names must match exactly as they appear in `teachers.json`:
+Each rule books 1 or 2 consecutive 30-minute slots on a given weekday. When using Notion, rules are managed in the Schedule database. When editing `scheduling_rules.yml` directly, teacher names must match exactly as they appear in `teachers.json`:
 
 ```yaml
-- label: midday        # combined with weekday → rule ID (e.g. mon_midday)
-  weekday: mon         # mon, tue, wed, thu, fri, sat, sun
+- label: Monday Midday  # combined with weekday → rule ID (e.g. mon_Monday Midday)
+  weekday: mon          # mon, tue, wed, thu, fri, sat, sun
   enabled: true
-  start_time: "13:00"  # HH:MM, must be on the hour or half-hour
-  slots: 2             # 1 books 13:00 only; 2 books 13:00 and 13:30
-  preferred_teachers:  # tried in order; must match names in teachers.json exactly
+  start_time: "13:00"   # HH:MM, must be on the hour or half-hour
+  slots: 2              # 1 books 13:00 only; 2 books 13:00 and 13:30
+  preferred_teachers:   # tried in order; must match names in teachers.json exactly
     - "Maria Garcia"
     - "Ana Lopez"
   allow_fallbacks: true  # fall back to any available teacher if preferred unavailable
@@ -105,7 +119,7 @@ Check server time synchronization:
 python main.py server-time
 ```
 
-## Features (Prototype)
+## Features
 
 *   Authentication against the booking backend.
 *   Availability check for a target lesson datetime.
@@ -114,3 +128,4 @@ python main.py server-time
 *   **Automated Booking**: Perform lesson booking for a specific teacher and time.
 *   **Booking Management**: List upcoming classes and cancel existing bookings.
 *   **Automated Scheduling**: Automatically book lessons based on rules when the booking window opens using `run-due`.
+*   **Notion Integration**: Sync teachers to Notion, manage the schedule from a Notion database, and log booking outcomes to a Notion run log.

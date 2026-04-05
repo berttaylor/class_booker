@@ -13,6 +13,7 @@ from app.api.availability import get_available_teachers
 from app.api.booking import get_bookings, book_lesson
 from app.client import BookingClient
 from app.config import app_config, settings
+from app.notion import fetch_schedule_from_notion, cache_schedule_locally, log_run_to_notion
 from app.rules import load_scheduling_rules
 from app.services.session import ensure_fresh_token
 from app.teachers import load_teacher_cache, populate_teachers, validate_rules_against_cache
@@ -274,7 +275,7 @@ def _wait_for_window(booking_open_dt, now_local, local_tz, client):
     print("\n  Window open! Booking...")
 
 
-def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_bookings, target_date_str, target_start_time_str, used_fallback=False) -> bool:
+def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_bookings, target_date_str, target_start_time_str, used_fallback=False, slot_key="") -> bool:
     """
     Iterates candidates and attempts to book the lesson.
     Returns True on first success. Mutates approved_bookings on success.
@@ -308,6 +309,7 @@ def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_b
                 if used_fallback:
                     msg += " (fallback — preferred teachers unavailable)"
                 send_push(msg, priority=-1)
+                log_run_to_notion("Booked", f"{tname} — {target_date_str} {target_start_time_str}", rule=slot_key, teacher=tname)
                 approved_bookings.append({
                     "staff_id": tid,
                     "date": target_date_str,
@@ -343,6 +345,10 @@ def run_due_process(force: bool = False, force_soft: bool = False):
     actual_force = force or force_soft
     client = BookingClient(base_url=app_config.base_url)
     try:
+        notion_schedule = fetch_schedule_from_notion()
+        if notion_schedule:
+            cache_schedule_locally(notion_schedule)
+
         rules_data = load_scheduling_rules()
 
         # Teacher cache validation
@@ -363,6 +369,7 @@ def run_due_process(force: bool = False, force_soft: bool = False):
         except ValueError as e:
             print(f"  Schedule error: {e}")
             send_push(f"Schedule validation failed: {e}", priority=1)
+            log_run_to_notion("Error", f"Schedule validation failed: {e}")
             return
 
         local_tz = pytz.timezone(rules_data.timezone)
@@ -394,6 +401,7 @@ def run_due_process(force: bool = False, force_soft: bool = False):
         if not token:
             print("  Auth:   FAILED — check credentials in .env")
             send_push("Authentication failed — check credentials in .env", priority=1)
+            log_run_to_notion("Error", "Authentication failed — check credentials in .env")
             return
         client.set_token(token)
 
@@ -457,11 +465,12 @@ def run_due_process(force: bool = False, force_soft: bool = False):
             success = _attempt_booking(
                 client, candidates, target_slot_iso, force_soft,
                 approved_bookings, target_date_str, target_start_time_str,
-                used_fallback=used_fallback,
+                used_fallback=used_fallback, slot_key=slot_key,
             )
             if not success:
                 print(f"  FAILED:      all teachers exhausted for {slot_key}")
                 send_push(f"Could not book {slot_key} on {target_date_str} at {target_start_time_str} — all teachers failed", priority=1)
+                log_run_to_notion("Failed", f"No teachers available for {slot_key} on {target_date_str} at {target_start_time_str}", rule=slot_key)
 
         print("\nBooking process completed.")
 

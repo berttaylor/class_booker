@@ -4,6 +4,7 @@ from pathlib import Path
 
 from app.client import BookingClient
 from app.api.availability import get_tutors_map
+from app.notion import sync_teachers_to_notion
 
 TEACHERS_CACHE_PATH = Path("teachers.json")
 
@@ -58,6 +59,7 @@ def populate_teachers(client: BookingClient) -> None:
 
     cache["teachers"] = teachers
     save_teacher_cache(cache)
+    sync_teachers_to_notion(cache)
 
 
 def validate_rules_against_cache(rules_data, cache: dict) -> None:

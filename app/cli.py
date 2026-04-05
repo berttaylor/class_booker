@@ -267,8 +267,9 @@ def populate_teachers_cmd():
     """
     try:
         with authed_client() as client:
+            typer.echo("Fetching teachers from API...")
             populate_teachers(client)
-            typer.echo("teachers.json updated.")
+            typer.echo("Done.")
     except RuntimeError:
         typer.echo("Authentication: Failure")
 
