@@ -12,7 +12,6 @@ from app.api.availability import get_available_teachers
 from app.api.booking import get_bookings, book_lesson
 from app.client import BookingClient
 from app.config import app_config, settings
-from app.notion import log_run_to_notion
 from app.rules import load_scheduling_rules
 from app.services.session import ensure_fresh_token
 from app.teachers import load_teacher_cache, validate_rules_against_cache
@@ -315,7 +314,6 @@ def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_b
                 if used_fallback:
                     msg += " (fallback — preferred teachers unavailable)"
                 send_push(msg, priority=-1)
-                log_run_to_notion("Booked", f"{tname} — {target_date_str} {target_start_time_str}", rule=slot_key, teacher=tname, job="RUN_DUE")
                 approved_bookings.append({
                     "staff_id": tid,
                     "date": target_date_str,
@@ -367,7 +365,6 @@ def run_due_process(force: bool = False, force_soft: bool = False):
         except ValueError as e:
             print(f"[{timestamp}] Schedule error: {e}")
             send_push(f"Schedule validation failed: {e}", priority=1)
-            log_run_to_notion("Error", f"Schedule validation failed: {e}", job="RUN_DUE")
             return
 
         # Phase 1: local clock only — no API calls
@@ -395,7 +392,6 @@ def run_due_process(force: bool = False, force_soft: bool = False):
         if not token:
             print("  Auth:   FAILED — check credentials in .env")
             send_push("Authentication failed — check credentials in .env", priority=1)
-            log_run_to_notion("Error", "Authentication failed — check credentials in .env", job="RUN_DUE")
             return
         client.set_token(token)
 
@@ -464,7 +460,6 @@ def run_due_process(force: bool = False, force_soft: bool = False):
             if not success:
                 print(f"  FAILED:      all teachers exhausted for {slot_key}")
                 send_push(f"Could not book {slot_key} on {target_date_str} at {target_start_time_str} — all teachers failed", priority=1)
-                log_run_to_notion("Failed", f"No teachers available for {slot_key} on {target_date_str} at {target_start_time_str}", rule=slot_key, job="RUN_DUE")
 
         print("\nBooking process completed.")
 

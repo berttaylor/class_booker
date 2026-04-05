@@ -46,12 +46,6 @@ class Settings(BaseSettings):
     pushover_user_key: str | None = None
     pushover_api_token: str | None = None
 
-    # Notion integration (optional)
-    notion_api_token: str | None = None
-    notion_teachers_database_id: str | None = None
-    notion_schedule_database_id: str | None = None
-    notion_run_log_database_id: str | None = None
-
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 def load_app_config(path: Path) -> AppConfig:

@@ -27,34 +27,16 @@ Python CLI tool that automates Spanish class booking by calling the booking plat
 
 ### Scheduled jobs
 
-`setup.sh` installs three independent launchd jobs:
+`setup.sh` installs two independent launchd jobs:
 
 | Job | Schedule | Responsibility |
 |---|---|---|
-| `run-due` | Every hour at :29 and :59 | Reads local `scheduling_rules.yml`, checks for due bookings, books. Never calls Notion. |
-| `sync-schedule` | Every hour at :25 and :55 | Fetches schedule from Notion, writes to `scheduling_rules.yml`. Runs 4 minutes before `run-due` so it's always current. |
-| `populate-teachers` | Daily at 03:00 | Fetches tutors from the booking API, merges into `teachers.json`, syncs to Notion. |
-
-If `sync-schedule` times out or Notion is unavailable, `run-due` uses the existing `scheduling_rules.yml` as a fallback.
-
-### Notion integration (optional)
-
-The app can sync teachers, read the schedule, and log booking outcomes to Notion. Add these to `.env`:
-
-```
-NOTION_API_TOKEN=secret_xxx
-NOTION_TEACHERS_DATABASE_ID=xxx   # Teachers DB — synced on populate-teachers
-NOTION_SCHEDULE_DATABASE_ID=xxx   # Schedule DB — read on every run-due
-NOTION_RUN_LOG_DATABASE_ID=xxx    # Run Log DB — bookings/errors written here
-```
-
-If these are not set the app works exactly as before — all Notion calls are silent no-ops.
-
-When `NOTION_SCHEDULE_DATABASE_ID` is set, the `sync-schedule` job fetches the schedule from Notion every 30 minutes and writes it to `scheduling_rules.yml`. The `run-due` job reads only the local file — it never calls Notion. If Notion is unreachable, `run-due` uses the existing `scheduling_rules.yml` as a fallback.
+| `run-due` | Every hour at :29 and :59 | Reads local `scheduling_rules.yml`, checks for due bookings, books. |
+| `populate-teachers` | Daily at 03:00 | Fetches tutors from the booking API, merges into `teachers.json`. |
 
 ### Rule format
 
-Each rule books 1 or 2 consecutive 30-minute slots on a given weekday. When using Notion, rules are managed in the Schedule database. When editing `scheduling_rules.yml` directly, teacher names must match exactly as they appear in `teachers.json`:
+Each rule books 1 or 2 consecutive 30-minute slots on a given weekday. Edit `scheduling_rules.yml` directly — teacher names must match exactly as they appear in `teachers.json`. Use `python web.py` to edit and validate via a browser UI.
 
 ```yaml
 - label: Monday Midday  # combined with weekday → rule ID (e.g. mon_Monday Midday)
@@ -131,9 +113,10 @@ Check server time synchronization:
 python main.py server-time
 ```
 
-Manually sync schedule from Notion:
+Edit and validate the schedule in a browser:
 ```bash
-python main.py sync-schedule
+python web.py
+# then open http://localhost:5001
 ```
 
 ## Features
@@ -145,4 +128,4 @@ python main.py sync-schedule
 *   **Automated Booking**: Perform lesson booking for a specific teacher and time.
 *   **Booking Management**: List upcoming classes and cancel existing bookings.
 *   **Automated Scheduling**: Automatically book lessons based on rules when the booking window opens using `run-due`.
-*   **Notion Integration**: Sync teachers to Notion, manage the schedule from a Notion database, and log booking outcomes to a Notion run log.
+*   **Schedule Editor**: Browser-based YAML editor with validation at `python web.py`.
