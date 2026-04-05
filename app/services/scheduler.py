@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import fcntl
+import random
 import pytz
 from datetime import datetime as dt, timedelta, timezone
 
@@ -18,6 +19,9 @@ from app.teachers import load_teacher_cache, validate_rules_against_cache
 from app.utils import get_server_time
 
 LOCK_FILE = ".run_due.lock"
+
+BOOKING_DELAY_MIN_SECONDS = 15
+BOOKING_DELAY_MAX_SECONDS = 30
 
 
 # ---------------------------------------------------------------------------
@@ -287,6 +291,10 @@ def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_b
         if force_soft:
             print(f"  [DRY RUN]    {tname} ({tid}) for {target_slot_iso}")
             return True
+
+        delay = random.uniform(BOOKING_DELAY_MIN_SECONDS, BOOKING_DELAY_MAX_SECONDS)
+        print(f"  Pre-booking delay: {delay:.1f}s")
+        time.sleep(delay)
 
         print(f"  Attempting:  {tname} ({tid})")
 

@@ -3,6 +3,7 @@ import respx
 import httpx
 from unittest.mock import patch
 
+
 from app.notion import sync_teachers_to_notion, _has_changes, _extract_page_state, log_run_to_notion
 
 NOTION_BASE = "https://api.notion.com/v1"
@@ -103,16 +104,17 @@ class TestExtractPageState:
 # sync_teachers_to_notion
 # ---------------------------------------------------------------------------
 
+@patch("app.teachers.save_teacher_cache")
 class TestSyncTeachersToNotion:
-    def test_skips_if_no_token(self):
+    def test_skips_if_no_token(self, _save):
         with mock_settings(token=None):
             assert sync_teachers_to_notion(FAKE_CACHE) is False
 
-    def test_skips_if_no_database_id(self):
+    def test_skips_if_no_database_id(self, _save):
         with mock_settings(db_id=None):
             assert sync_teachers_to_notion(FAKE_CACHE) is False
 
-    def test_creates_new_page_for_new_teacher(self):
+    def test_creates_new_page_for_new_teacher(self, _save):
         with mock_settings():
             with respx.mock(assert_all_called=False) as router:
                 router.post(f"{NOTION_BASE}/databases/db-id/query").mock(
@@ -128,7 +130,7 @@ class TestSyncTeachersToNotion:
         assert result is True
         assert create_route.called
 
-    def test_updates_changed_page(self):
+    def test_updates_changed_page(self, _save):
         with mock_settings():
             with respx.mock(assert_all_called=False) as router:
                 # Existing page has REMOVED status, but cache has ACTIVE — should update
@@ -148,7 +150,7 @@ class TestSyncTeachersToNotion:
         assert result is True
         assert update_route.called
 
-    def test_skips_unchanged_page(self):
+    def test_skips_unchanged_page(self, _save):
         with mock_settings():
             with respx.mock(assert_all_called=False) as router:
                 # Existing page matches cache exactly — should not update
@@ -167,7 +169,7 @@ class TestSyncTeachersToNotion:
                 })
         assert not update_route.called
 
-    def test_writes_removed_status(self):
+    def test_writes_removed_status(self, _save):
         with mock_settings():
             with respx.mock(assert_all_called=False) as router:
                 router.post(f"{NOTION_BASE}/databases/db-id/query").mock(
@@ -186,7 +188,7 @@ class TestSyncTeachersToNotion:
         body = json.loads(update_route.calls[0].request.content)
         assert body["properties"]["Status"]["select"]["name"] == "REMOVED"
 
-    def test_returns_false_on_http_error(self):
+    def test_returns_false_on_http_error(self, _save):
         with mock_settings():
             with respx.mock(assert_all_called=False) as router:
                 router.post(f"{NOTION_BASE}/databases/db-id/query").mock(

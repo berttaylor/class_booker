@@ -4,9 +4,10 @@ from pathlib import Path
 
 from app.client import BookingClient
 from app.api.availability import get_tutors_map
+from app.config import settings
 from app.notion import sync_teachers_to_notion
 
-TEACHERS_CACHE_PATH = Path("teachers.json")
+TEACHERS_CACHE_PATH = Path(settings.teachers_cache_path)
 
 
 def load_teacher_cache() -> dict:

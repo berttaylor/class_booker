@@ -1,6 +1,6 @@
 import yaml
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -26,6 +26,21 @@ class Settings(BaseSettings):
     # Secrets from .env
     login_email: str | None = None
     login_password: str | None = None
+
+    # Set to false on secondary clones to skip the daily teacher sync (primary handles it).
+    # When false, teachers_cache_path must be set to an absolute path pointing at the
+    # primary clone's teachers.json.
+    populate_teachers_enabled: bool = True
+    teachers_cache_path: str = "teachers.json"
+
+    @model_validator(mode="after")
+    def check_secondary_cache_path(self) -> "Settings":
+        if not self.populate_teachers_enabled and self.teachers_cache_path == "teachers.json":
+            raise ValueError(
+                "POPULATE_TEACHERS=false requires TEACHERS_CACHE_PATH to be set to an "
+                "absolute path pointing at the primary clone's teachers.json"
+            )
+        return self
 
     # Pushover notifications (optional)
     pushover_user_key: str | None = None

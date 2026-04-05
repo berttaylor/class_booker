@@ -7,7 +7,7 @@ import typer
 from app.api.auth import get_cached_token
 from app.api.availability import get_available_teachers, get_teacher_slots, get_tutors_map
 from app.api.booking import book_lesson, cancel_booking, get_bookings
-from app.config import app_config
+from app.config import app_config, settings
 from app.notion import (
     fetch_schedule_from_notion, cache_schedule_locally, log_run_to_notion,
     NotionScheduleTimeoutError,
@@ -271,6 +271,9 @@ def populate_teachers_cmd():
     Fetch all teachers from the API, save to teachers.json, and sync to Notion.
     Intended to be run by launchd daily at 03:00.
     """
+    if not settings.populate_teachers_enabled:
+        typer.echo("populate-teachers disabled (POPULATE_TEACHERS=false) — skipping")
+        return
     timestamp = dt.now().strftime("%Y-%m-%d %H:%M:%S")
     t0 = time.monotonic()
     try:
