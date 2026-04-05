@@ -14,7 +14,7 @@ Python CLI tool that automates Spanish class booking by calling the booking plat
     ```bash
     pip install -r requirements.txt
     ```
-4.  Run the setup script — this creates your `.env`, `scheduling_rules.yml`, and installs the scheduled job:
+4.  Run the setup script — this creates your `.env`, `scheduling_rules.yml`, and installs three scheduled jobs:
     ```bash
     ./setup.sh
     ```
@@ -24,6 +24,18 @@ Python CLI tool that automates Spanish class booking by calling the booking plat
     python main.py populate-teachers
     ```
 7.  Configure `config.yaml` if needed (defaults provided for worldsacross.com).
+
+### Scheduled jobs
+
+`setup.sh` installs three independent launchd jobs:
+
+| Job | Schedule | Responsibility |
+|---|---|---|
+| `run-due` | Every hour at :29 and :59 | Reads local `scheduling_rules.yml`, checks for due bookings, books. Never calls Notion. |
+| `sync-schedule` | Every hour at :25 and :55 | Fetches schedule from Notion, writes to `scheduling_rules.yml`. Runs 4 minutes before `run-due` so it's always current. |
+| `populate-teachers` | Daily at 03:00 | Fetches tutors from the booking API, merges into `teachers.json`, syncs to Notion. |
+
+If `sync-schedule` times out or Notion is unavailable, `run-due` uses the existing `scheduling_rules.yml` as a fallback.
 
 ### Notion integration (optional)
 
@@ -38,7 +50,7 @@ NOTION_RUN_LOG_DATABASE_ID=xxx    # Run Log DB — bookings/errors written here
 
 If these are not set the app works exactly as before — all Notion calls are silent no-ops.
 
-When `NOTION_SCHEDULE_DATABASE_ID` is set, the schedule is fetched from Notion on every `run-due` and written to `scheduling_rules.yml` as a local cache. If Notion is unreachable, the existing `scheduling_rules.yml` is used as a fallback.
+When `NOTION_SCHEDULE_DATABASE_ID` is set, the `sync-schedule` job fetches the schedule from Notion every 30 minutes and writes it to `scheduling_rules.yml`. The `run-due` job reads only the local file — it never calls Notion. If Notion is unreachable, `run-due` uses the existing `scheduling_rules.yml` as a fallback.
 
 ### Rule format
 
@@ -117,6 +129,11 @@ python main.py run-due --force-soft
 Check server time synchronization:
 ```bash
 python main.py server-time
+```
+
+Manually sync schedule from Notion:
+```bash
+python main.py sync-schedule
 ```
 
 ## Features

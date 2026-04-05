@@ -1,4 +1,5 @@
 from datetime import datetime as dt, timezone
+import time
 from typing import Annotated
 
 import typer
@@ -7,9 +8,15 @@ from app.api.auth import get_cached_token
 from app.api.availability import get_available_teachers, get_teacher_slots, get_tutors_map
 from app.api.booking import book_lesson, cancel_booking, get_bookings
 from app.config import app_config
+from app.notion import (
+    fetch_schedule_from_notion, cache_schedule_locally, log_run_to_notion,
+    NotionScheduleTimeoutError,
+)
+from app.notifications import send_push
 from app.services.scheduler import run_due_process
 from app.services.session import authed_client, ensure_fresh_token
-from app.teachers import populate_teachers
+from app.teachers import populate_teachers, load_teacher_cache, validate_rules_against_cache
+from app.rules import load_scheduling_rules
 from app.utils import get_server_time
 
 app = typer.Typer()
@@ -262,16 +269,58 @@ def list_tutors():
 @app.command(name="populate-teachers")
 def populate_teachers_cmd():
     """
-    Fetch all teachers from the API and save to teachers.json.
-    Run this once before using run-due, and whenever your teacher list may have changed.
+    Fetch all teachers from the API, save to teachers.json, and sync to Notion.
+    Intended to be run by launchd daily at 03:00.
     """
+    timestamp = dt.now().strftime("%Y-%m-%d %H:%M:%S")
+    t0 = time.monotonic()
     try:
         with authed_client() as client:
-            typer.echo("Fetching teachers from API...")
             populate_teachers(client)
-            typer.echo("Done.")
+            elapsed = time.monotonic() - t0
+            cache = load_teacher_cache()
+            teacher_count = len(cache.get("teachers", {}))
+            typer.echo(f"[{timestamp}] Teachers sync — {elapsed:.2f}s — {teacher_count} teachers")
+            log_run_to_notion("Synced", f"{teacher_count} teachers — {elapsed:.2f}s", job="POPULATE_TEACHERS")
     except RuntimeError:
-        typer.echo("Authentication: Failure")
+        elapsed = time.monotonic() - t0
+        typer.echo(f"[{timestamp}] Teachers sync — FAILED — authentication error")
+        log_run_to_notion("Error", "Teachers sync failed — authentication error", job="POPULATE_TEACHERS")
+
+
+@app.command(name="sync-schedule")
+def sync_schedule():
+    """
+    Fetch the schedule from Notion and update scheduling_rules.yml.
+    Intended to be run by launchd every 30 minutes (:25 and :55).
+    """
+    timestamp = dt.now().strftime("%Y-%m-%d %H:%M:%S")
+    typer.echo(f"[{timestamp}] Schedule sync")
+    t0 = time.monotonic()
+    try:
+        data = fetch_schedule_from_notion()
+        elapsed = time.monotonic() - t0
+        if data:
+            rule_count = len(data["rules"])
+            cache_schedule_locally(data)
+            typer.echo(f"  Rules: {rule_count}")
+            typer.echo(f"  Time:  {elapsed:.2f}s")
+            try:
+                rules_data = load_scheduling_rules()
+                validate_rules_against_cache(rules_data, load_teacher_cache())
+            except ValueError as e:
+                typer.echo(f"  Warning: {e}")
+                log_run_to_notion("Synced", f"{rule_count} rules — {elapsed:.2f}s — WARNING: {e}", job="SYNC_SCHEDULE")
+            else:
+                log_run_to_notion("Synced", f"{rule_count} rules — {elapsed:.2f}s", job="SYNC_SCHEDULE")
+        else:
+            typer.echo("  FAILED — Notion not configured or unreachable")
+            log_run_to_notion("Error", "Schedule sync failed — Notion not configured or unreachable", job="SYNC_SCHEDULE")
+    except NotionScheduleTimeoutError as e:
+        elapsed = time.monotonic() - t0
+        typer.echo(f"  FAILED — {e}")
+        send_push(f"Schedule sync timed out: {e}", priority=-1)
+        log_run_to_notion("Error", f"Schedule sync timed out: {e}", job="SYNC_SCHEDULE")
 
 
 if __name__ == "__main__":

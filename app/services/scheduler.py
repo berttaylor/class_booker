@@ -5,18 +5,16 @@ import fcntl
 import pytz
 from datetime import datetime as dt, timedelta, timezone
 
-from datetime import date
-
 from app.api.auth import login, is_token_expired
 from app.notifications import send_push
 from app.api.availability import get_available_teachers
 from app.api.booking import get_bookings, book_lesson
 from app.client import BookingClient
 from app.config import app_config, settings
-from app.notion import fetch_schedule_from_notion, cache_schedule_locally, log_run_to_notion
+from app.notion import log_run_to_notion
 from app.rules import load_scheduling_rules
 from app.services.session import ensure_fresh_token
-from app.teachers import load_teacher_cache, populate_teachers, validate_rules_against_cache
+from app.teachers import load_teacher_cache, validate_rules_against_cache
 from app.utils import get_server_time
 
 LOCK_FILE = ".run_due.lock"
@@ -309,7 +307,7 @@ def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_b
                 if used_fallback:
                     msg += " (fallback — preferred teachers unavailable)"
                 send_push(msg, priority=-1)
-                log_run_to_notion("Booked", f"{tname} — {target_date_str} {target_start_time_str}", rule=slot_key, teacher=tname)
+                log_run_to_notion("Booked", f"{tname} — {target_date_str} {target_start_time_str}", rule=slot_key, teacher=tname, job="RUN_DUE")
                 approved_bookings.append({
                     "staff_id": tid,
                     "date": target_date_str,
@@ -345,15 +343,10 @@ def run_due_process(force: bool = False, force_soft: bool = False):
     actual_force = force or force_soft
     client = BookingClient(base_url=app_config.base_url)
     try:
-        notion_schedule = fetch_schedule_from_notion()
-        if notion_schedule:
-            schedule_source = "notion"
-            cache_schedule_locally(notion_schedule)
-        else:
-            schedule_source = "local cache"
-
-
         rules_data = load_scheduling_rules()
+        local_tz = pytz.timezone(rules_data.timezone)
+        now_local = dt.now(timezone.utc).astimezone(local_tz)
+        timestamp = now_local.strftime("%Y-%m-%d %H:%M:%S")
 
         # Teacher cache validation
         cache = load_teacher_cache()
@@ -361,26 +354,15 @@ def run_due_process(force: bool = False, force_soft: bool = False):
             print("  No teachers cache — run: python main.py populate-teachers")
             return
 
-        updated_date = date.fromisoformat(cache.get("updated", "1970-01-01"))
-        age_days = (date.today() - updated_date).days
-        if age_days > settings.update_teachers_frequency_days:
-            print(f"  Teachers cache is {age_days}d old — refreshing...")
-            populate_teachers(client)
-            cache = load_teacher_cache()
-
         try:
             validate_rules_against_cache(rules_data, cache)
         except ValueError as e:
-            print(f"  Schedule error: {e}")
+            print(f"[{timestamp}] Schedule error: {e}")
             send_push(f"Schedule validation failed: {e}", priority=1)
-            log_run_to_notion("Error", f"Schedule validation failed: {e}")
+            log_run_to_notion("Error", f"Schedule validation failed: {e}", job="RUN_DUE")
             return
 
-        local_tz = pytz.timezone(rules_data.timezone)
-
         # Phase 1: local clock only — no API calls
-        now_local = dt.now(timezone.utc).astimezone(local_tz)
-        timestamp = now_local.strftime("%Y-%m-%d %H:%M:%S")
         due_rules, rule_lesson_times, rule_open_times, all_upcoming = _evaluate_rules(rules_data, now_local)
         _apply_force_flag(actual_force, force_soft, due_rules, all_upcoming, rule_lesson_times, rule_open_times)
 
@@ -392,7 +374,7 @@ def run_due_process(force: bool = False, force_soft: bool = False):
                 total_seconds = int(time_until.total_seconds())
                 hours, remainder = divmod(total_seconds, 3600)
                 minutes, seconds = divmod(remainder, 60)
-                print(f"[{timestamp}] Nothing to book ({schedule_source})")
+                print(f"[{timestamp}] Nothing to book")
                 print(f"  Next window: {next_open_dt.strftime('%Y-%m-%d %H:%M')} (in {hours}h {minutes}m {seconds}s)")
                 print(f"  For class:   {next_lesson_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})")
             else:
@@ -400,12 +382,12 @@ def run_due_process(force: bool = False, force_soft: bool = False):
             return
 
         # Phase 2: something is due — authenticate and sync time
-        print(f"[{timestamp}] Booking due ({schedule_source}) — processing {len(due_rules)} rule(s)")
+        print(f"[{timestamp}] Booking due — processing {len(due_rules)} rule(s)")
         token = login(client)
         if not token:
             print("  Auth:   FAILED — check credentials in .env")
             send_push("Authentication failed — check credentials in .env", priority=1)
-            log_run_to_notion("Error", "Authentication failed — check credentials in .env")
+            log_run_to_notion("Error", "Authentication failed — check credentials in .env", job="RUN_DUE")
             return
         client.set_token(token)
 
@@ -474,7 +456,7 @@ def run_due_process(force: bool = False, force_soft: bool = False):
             if not success:
                 print(f"  FAILED:      all teachers exhausted for {slot_key}")
                 send_push(f"Could not book {slot_key} on {target_date_str} at {target_start_time_str} — all teachers failed", priority=1)
-                log_run_to_notion("Failed", f"No teachers available for {slot_key} on {target_date_str} at {target_start_time_str}", rule=slot_key)
+                log_run_to_notion("Failed", f"No teachers available for {slot_key} on {target_date_str} at {target_start_time_str}", rule=slot_key, job="RUN_DUE")
 
         print("\nBooking process completed.")
 

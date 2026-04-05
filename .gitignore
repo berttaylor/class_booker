@@ -167,4 +167,6 @@ logs/
 scheduling_rules.backup.yml
 scheduling_rules.yml
 *.classbooker.plist
+*.classbooker.sync.plist
+*.classbooker.teachers.plist
 

@@ -28,9 +28,6 @@ class Settings(BaseSettings):
     pushover_user_key: str | None = None
     pushover_api_token: str | None = None
 
-    # Teacher cache
-    update_teachers_frequency_days: int = 7
-
     # Notion integration (optional)
     notion_api_token: str | None = None
     notion_teachers_database_id: str | None = None

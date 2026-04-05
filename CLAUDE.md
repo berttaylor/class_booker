@@ -54,18 +54,23 @@ app/
 **Configuration layers:**
 - `config.yaml` — API base URL and endpoint paths → `AppConfig` via `app/config.py`
 - `.env` — login credentials, optional Notion tokens → `Settings`
-- `scheduling_rules.yml` — automated booking rules → `SchedulingRules` via `app/rules.py` (local cache, overwritten from Notion on each `run-due`)
+- `scheduling_rules.yml` — automated booking rules → `SchedulingRules` via `app/rules.py` (local file; kept current by the `sync-schedule` job)
+
+**Scheduled jobs** (three independent launchd jobs, all managed by `setup.sh`):
+- `run-due` (:29, :59) — reads local `scheduling_rules.yml`, checks for due bookings, books. **Never calls Notion.**
+- `sync-schedule` (:25, :55) — fetches schedule from Notion, writes `scheduling_rules.yml`. Runs 4 minutes before `run-due`. If Notion is unreachable, `run-due` uses the existing file as a fallback.
+- `populate-teachers` (03:00 daily) — fetches tutors from the booking API, merges into `teachers.json`, syncs to Notion Teachers DB.
 
 **Notion integration** (`app/notion.py`): optional, activated by setting env vars. All Notion calls follow the same pattern — credential check first (silent no-op if not configured), try/except wrapper, never raises. Three databases:
-- `NOTION_TEACHERS_DATABASE_ID` — teachers are dual-written here on `populate-teachers` (PATCH existing, POST new, skip unchanged)
-- `NOTION_SCHEDULE_DATABASE_ID` — schedule is fetched on every `run-due` and written to `scheduling_rules.yml` before `load_scheduling_rules()` runs; falls back to existing YAML if Notion unreachable
-- `NOTION_RUN_LOG_DATABASE_ID` — a row is created for every notable run outcome (Booked, Failed, Error); silent runs are not logged
+- `NOTION_TEACHERS_DATABASE_ID` — teachers synced here by `populate-teachers` (PATCH existing, POST new, skip unchanged)
+- `NOTION_SCHEDULE_DATABASE_ID` — schedule fetched by `sync-schedule`, written to `scheduling_rules.yml`
+- `NOTION_RUN_LOG_DATABASE_ID` — a row is created for every run of `run-due`, `sync-schedule`, and `populate-teachers` (statuses: Booked, Failed, Error, Synced)
 
 **`BookingRule` schema** (`app/rules.py`): each rule has `label` (e.g. `"Monday Midday"` — matches the Name column in the Notion Schedule database), `weekday` (single string, e.g. `"mon"`), `start_time` (HH:MM, on the hour or half-hour), `slots` (1 or 2), `preferred_teachers` (list of teacher name strings, default `[]`), and `allow_fallbacks`. The `id` property is computed as `f"{weekday}_{label}"`. `slot_times()` expands to `["13:00"]` or `["13:00", "13:30"]` depending on `slots`. Pydantic validators enforce all constraints at load time.
 
-**Teacher cache** (`app/teachers.py`): `teachers.json` (gitignored, project root) maps teacher name → `{id, is_favorite, status}`. Names are never deleted — absent teachers are marked `REMOVED`. Updated by `list-tutors` and the `populate-teachers` CLI command. `run-due` checks the cache on startup: exits with a message if missing, auto-refreshes if older than `UPDATE_TEACHERS_FREQUENCY_DAYS` (default 7, set in `.env`), and raises a `ValueError` if any name in the rules is unknown.
+**Teacher cache** (`app/teachers.py`): `teachers.json` (gitignored, project root) maps teacher name → `{id, is_favorite, status, notion_page_id}`. Names are never deleted — absent teachers are marked `REMOVED`. Updated by `populate-teachers`. `run-due` checks the cache on startup: exits with a message if missing, and raises a `ValueError` if any name in the rules is unknown.
 
-**Scheduler** (`services/scheduler.py` → `run_due_process`): two-phase design — Phase 1 uses the local clock only to check if any rule is due (no API calls); Phase 2 authenticates and syncs server time only when a booking is actually due. `_evaluate_rules` expands each rule into individual slot entries keyed by `slot_key` (e.g. `wed_midday_slot1`), returning `(rule, slot_key)` tuples in `due_rules` and dicts keyed by `slot_key`. Uses a file lock (`.run_due.lock`) to prevent concurrent runs.
+**Scheduler** (`services/scheduler.py` → `run_due_process`): two-phase design — Phase 1 uses the local clock only to check if any rule is due (no API calls); Phase 2 authenticates and syncs server time only when a booking is actually due. `_evaluate_rules` expands each rule into individual slot entries keyed by `slot_key` (e.g. `wed_midday_slot1`), returning `(rule, slot_key)` tuples in `due_rules` and dicts keyed by `slot_key`. Uses a file lock (`.run_due.lock`) to prevent concurrent runs. `run_due_process` never calls Notion (except to log outcomes via `log_run_to_notion`).
 
 ## Testing
 

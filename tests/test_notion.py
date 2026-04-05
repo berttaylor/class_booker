@@ -238,6 +238,26 @@ class TestLogRunToNotion:
         assert props["Teacher"]["rich_text"][0]["text"]["content"] == "Maria Garcia"
         assert body["parent"]["database_id"] == "log-db-id"
 
+    def test_includes_job_field_when_provided(self):
+        with mock_settings():
+            with respx.mock(assert_all_called=False) as router:
+                create_route = router.post(f"{NOTION_BASE}/pages").mock(
+                    return_value=httpx.Response(200, json={"id": "new-id"})
+                )
+                log_run_to_notion("Booked", "detail", job="RUN_DUE")
+        body = json.loads(create_route.calls[0].request.content)
+        assert body["properties"]["Job"]["select"]["name"] == "RUN_DUE"
+
+    def test_omits_job_field_when_not_provided(self):
+        with mock_settings():
+            with respx.mock(assert_all_called=False) as router:
+                create_route = router.post(f"{NOTION_BASE}/pages").mock(
+                    return_value=httpx.Response(200, json={"id": "new-id"})
+                )
+                log_run_to_notion("Booked", "detail")
+        body = json.loads(create_route.calls[0].request.content)
+        assert "Job" not in body["properties"]
+
     def test_silent_on_http_error(self):
         with mock_settings():
             with respx.mock(assert_all_called=False) as router:
