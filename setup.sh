@@ -2,11 +2,12 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BASE_PLIST="com.$(whoami).classbooker"
+BASE_PLIST="com.$(whoami).$(basename "$SCRIPT_DIR")"
 LOG_OUT="$SCRIPT_DIR/logs/classbooker.log"
 LOG_ERR="$SCRIPT_DIR/logs/classbooker.error.log"
 
 echo "=== Class Booker Setup ==="
+echo "Service: $BASE_PLIST"
 echo ""
 
 # .env

@@ -19,7 +19,10 @@ class AppConfig(BaseModel):
 
 class Settings(BaseSettings):
     config_path: Path = Path(__file__).parent.parent / "config.yaml"
-    
+
+    # Derived from the project directory name — no config needed
+    service_name: str = Path.cwd().name
+
     # Secrets from .env
     login_email: str | None = None
     login_password: str | None = None
@@ -33,7 +36,7 @@ class Settings(BaseSettings):
     notion_teachers_database_id: str | None = None
     notion_schedule_database_id: str | None = None
     notion_run_log_database_id: str | None = None
-    
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 def load_app_config(path: Path) -> AppConfig:

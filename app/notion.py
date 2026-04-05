@@ -280,6 +280,7 @@ def log_run_to_notion(status: str, detail: str, rule: str = "", teacher: str = "
         "Detail": {"rich_text": [{"text": {"content": detail}}]},
         "Rule": {"rich_text": [{"text": {"content": rule}}]},
         "Teacher": {"rich_text": [{"text": {"content": teacher}}]},
+        "Service": {"select": {"name": settings.service_name}},
     }
     if job:
         properties["Job"] = {"select": {"name": job}}
