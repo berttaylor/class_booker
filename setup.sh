@@ -20,52 +20,36 @@ else
     echo "  → Open .env and fill in your LOGIN_EMAIL and LOGIN_PASSWORD"
 fi
 
-# scheduling_rules/bert.yml
+# scheduling_rules/
 mkdir -p "$SCRIPT_DIR/scheduling_rules"
-if [ -f "$SCRIPT_DIR/scheduling_rules/bert.yml" ]; then
-    echo "✓ scheduling_rules/bert.yml already exists — skipping"
+if compgen -G "$SCRIPT_DIR/scheduling_rules/*.yml" > /dev/null 2>&1; then
+    echo "✓ scheduling_rules/ already has files — skipping example"
 else
-    cat > "$SCRIPT_DIR/scheduling_rules/bert.yml" <<'TMPL'
-timezone: Europe/Madrid
+    cat > "$SCRIPT_DIR/scheduling_rules/example.yml" <<'TMPL'
+timezone: Europe/London
 
 settings:
-  is_active: true
+  is_active: false
 
 credentials:
   email: YOUR_EMAIL
   password: YOUR_PASSWORD
 
 rules:
-  # MONDAY
-  - label: midday
-    weekday: mon
-    enabled: true
-    start_time: "13:00"
-    slots: 2
-    preferred_teachers:
-      - "Teacher Name"
-      - "Another Teacher"
-    allow_fallbacks: true
-
-  - label: evening
-    weekday: mon
-    enabled: false
-    start_time: "18:00"
-    slots: 2
-    allow_fallbacks: true
-
-  # Add more rules following the same pattern.
-  # label:              short name for the rule (e.g. "midday", "evening")
-  # weekday:            one of mon, tue, wed, thu, fri, sat, sun
-  # enabled:            true/false
-  # start_time:         "HH:MM" - must be on the hour or half-hour
-  # slots:              1 or 2 consecutive 30-min bookings starting at start_time
-  # preferred_teachers: optional. teacher names in priority order - must match names in data/teachers.json exactly
-  #                     run `python main.py populate-teachers` to generate data/teachers.json.
-  # allow_fallbacks:    if true, fall back to any available teacher when preferred are unavailable
+  # Each rule books one session per week at a fixed day and time.
+  # Use the "+ Rule" button in the web editor to add rules, or copy this block.
+  #
+  # - label: midday           # short name — must be unique per weekday (e.g. morning, midday, evening)
+  #   enabled: true           # false = skip without deleting
+  #   weekday: mon            # mon, tue, wed, thu, fri, sat, sun
+  #   start_time: "13:00"    # on the hour or half-hour, e.g. "09:00", "13:30", "18:00"
+  #   slots: 1               # 1 = 30 min, 2 = 1 hour
+  #   preferred_teachers:    # in priority order — must match names exactly as shown on the platform
+  #     - "Teacher Name"
+  #   allow_fallbacks: true  # true = book anyone if preferred teachers are unavailable
 TMPL
-    echo "✓ Created scheduling_rules/bert.yml from template"
-    echo "  → Open scheduling_rules/bert.yml and fill in your credentials and configure your lesson schedule"
+    echo "✓ Created scheduling_rules/example.yml"
+    echo "  → Open the web editor and fill in your credentials and rules"
 fi
 
 # logs and runners directories
