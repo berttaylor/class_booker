@@ -28,6 +28,13 @@ else
     cat > "$SCRIPT_DIR/scheduling_rules/bert.yml" <<'TMPL'
 timezone: Europe/Madrid
 
+settings:
+  is_active: true
+
+credentials:
+  email: YOUR_EMAIL
+  password: YOUR_PASSWORD
+
 booking:
   open_offset_days: 7
   open_offset_minutes: 30
@@ -63,7 +70,7 @@ rules:
   # allow_fallbacks:    if true, fall back to any available teacher when preferred are unavailable
 TMPL
     echo "✓ Created scheduling_rules/bert.yml from template"
-    echo "  → Open scheduling_rules/bert.yml and configure your lesson schedule"
+    echo "  → Open scheduling_rules/bert.yml and fill in your credentials and configure your lesson schedule"
 fi
 
 # logs and runners directories

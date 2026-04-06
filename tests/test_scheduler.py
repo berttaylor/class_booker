@@ -13,7 +13,7 @@ from freezegun import freeze_time
 
 import app.services.scheduler as sched_module
 from app.services.scheduler import get_synced_now, run_due_process
-from app.rules import BookingRule, BookingConfig, SchedulingRules
+from app.rules import BookingRule, BookingConfig, ScheduleCredentials, SchedulingRules
 
 
 # ---------------------------------------------------------------------------
@@ -47,6 +47,7 @@ def make_rules(
             open_offset_minutes=open_offset_minutes,
             precheck_lead_seconds=precheck_lead_seconds,
         ),
+        credentials=ScheduleCredentials(email="test@example.com", password="secret"),
         rules=[
             BookingRule(
                 label=label,
@@ -157,7 +158,7 @@ def run_due_with_mocks(
         # However, scheduler.py calls get_synced_now(client) which calls dt.now(timezone.utc).
         # freezegun should handle dt.now() automatically.
         
-        with patch.object(sched_module, "load_scheduling_rules", return_value=rules), \
+        with patch.object(sched_module, "load_active_schedules", return_value=[("test", rules)]), \
              patch.object(sched_module, "load_teacher_cache", return_value=FAKE_CACHE), \
              patch.object(sched_module, "validate_rules_against_cache"), \
              patch.object(sched_module, "login", return_value=token), \
@@ -597,11 +598,8 @@ class TestForceMode:
 class TestLock:
     def test_lock_prevents_concurrent_run(self, capsys):
         """If acquire_lock returns None, run_due_process exits early."""
-        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"])
-
         with freeze_time("2026-04-08T10:29:00+00:00"):
             with patch.object(sched_module, "acquire_lock", return_value=None), \
-                 patch.object(sched_module, "load_scheduling_rules", return_value=rules), \
                  patch.object(sched_module, "book_lesson") as book_fn:
                 run_due_process()
 
@@ -628,6 +626,7 @@ class TestBookingsCacheUpdate:
                 open_offset_minutes=30,
                 precheck_lead_seconds=120,
             ),
+            credentials=ScheduleCredentials(email="test@example.com", password="secret"),
             rules=[
                 BookingRule(
                     label="rule1",
@@ -658,7 +657,7 @@ class TestBookingsCacheUpdate:
         frozen_time = "2026-04-08T10:29:00+00:00"
 
         with freeze_time(frozen_time) as frozen:
-            with patch.object(sched_module, "load_scheduling_rules", return_value=rules), \
+            with patch.object(sched_module, "load_active_schedules", return_value=[("test", rules)]), \
                  patch.object(sched_module, "load_teacher_cache", return_value=FAKE_CACHE), \
                  patch.object(sched_module, "validate_rules_against_cache"), \
                  patch.object(sched_module, "login", return_value="fake.token"), \
@@ -688,11 +687,8 @@ class TestBookingsCacheUpdate:
 class TestTeacherCache:
     def test_exits_if_no_cache(self, capsys):
         """run_due_process exits early with a message when teachers.json is missing."""
-        rules = make_rules(weekday="wed", start_time="13:00")
-
         with freeze_time("2026-04-08T10:29:00+00:00"):
-            with patch.object(sched_module, "load_scheduling_rules", return_value=rules), \
-                 patch.object(sched_module, "load_teacher_cache", return_value={}), \
+            with patch.object(sched_module, "load_teacher_cache", return_value={}), \
                  patch.object(sched_module, "acquire_lock", return_value=MagicMock()), \
                  patch.object(sched_module, "release_lock"), \
                  patch.object(sched_module, "book_lesson") as book_fn:

@@ -2,7 +2,7 @@ import pytest
 import yaml
 from pathlib import Path
 
-from app.rules import load_scheduling_rules, SchedulingRules, BookingRule
+from app.rules import load_scheduling_rules, load_active_schedules, SchedulingRules, BookingRule, ScheduleSettings, ScheduleCredentials
 
 RULES_FILE = Path(__file__).parent.parent / "scheduling_rules" / "bert.yml"
 
@@ -183,3 +183,115 @@ class TestBookingRuleValidation:
                 booking=BookingConfig(open_offset_days=7, open_offset_minutes=30, precheck_lead_seconds=120),
                 rules=[],
             )
+
+
+class TestScheduleSettings:
+    def test_defaults_to_active(self):
+        s = ScheduleSettings()
+        assert s.is_active is True
+
+    def test_can_be_set_inactive(self):
+        s = ScheduleSettings(is_active=False)
+        assert s.is_active is False
+
+    def test_scheduling_rules_defaults_settings(self):
+        from app.rules import BookingConfig
+        rules = SchedulingRules(
+            timezone="Europe/Madrid",
+            booking=BookingConfig(open_offset_days=7, open_offset_minutes=30, precheck_lead_seconds=120),
+            rules=[],
+        )
+        assert rules.settings.is_active is True
+
+    def test_scheduling_rules_respects_is_active_false(self):
+        from app.rules import BookingConfig
+        rules = SchedulingRules(
+            timezone="Europe/Madrid",
+            booking=BookingConfig(open_offset_days=7, open_offset_minutes=30, precheck_lead_seconds=120),
+            settings=ScheduleSettings(is_active=False),
+            rules=[],
+        )
+        assert rules.settings.is_active is False
+
+
+class TestScheduleCredentials:
+    def test_valid_credentials(self):
+        c = ScheduleCredentials(email="user@example.com", password="secret")
+        assert c.email == "user@example.com"
+        assert c.password == "secret"
+
+    def test_credentials_none_by_default(self):
+        from app.rules import BookingConfig
+        rules = SchedulingRules(
+            timezone="Europe/Madrid",
+            booking=BookingConfig(open_offset_days=7, open_offset_minutes=30, precheck_lead_seconds=120),
+            rules=[],
+        )
+        assert rules.credentials is None
+
+    def test_credentials_parsed_from_yaml(self, tmp_path):
+        yml = tmp_path / "test.yml"
+        yml.write_text(
+            "timezone: Europe/Madrid\n"
+            "booking:\n  open_offset_days: 7\n  open_offset_minutes: 30\n  precheck_lead_seconds: 120\n"
+            "credentials:\n  email: a@b.com\n  password: pw\n"
+            "rules: []\n"
+        )
+        rules = load_scheduling_rules(str(yml))
+        assert rules.credentials is not None
+        assert rules.credentials.email == "a@b.com"
+
+
+class TestLoadActiveSchedules:
+    def _make_yml(self, tmp_path, name, is_active=True, include_credentials=True):
+        creds = "credentials:\n  email: a@b.com\n  password: pw\n" if include_credentials else ""
+        active_str = "true" if is_active else "false"
+        (tmp_path / f"{name}.yml").write_text(
+            f"timezone: Europe/Madrid\n"
+            f"settings:\n  is_active: {active_str}\n"
+            f"{creds}"
+            f"booking:\n  open_offset_days: 7\n  open_offset_minutes: 30\n  precheck_lead_seconds: 120\n"
+            f"rules: []\n"
+        )
+
+    def test_returns_active_schedules(self, tmp_path):
+        self._make_yml(tmp_path, "alice")
+        self._make_yml(tmp_path, "bob")
+        result = load_active_schedules(str(tmp_path))
+        assert len(result) == 2
+        names = [name for name, _ in result]
+        assert "alice" in names
+        assert "bob" in names
+
+    def test_skips_inactive_schedules(self, tmp_path):
+        self._make_yml(tmp_path, "active")
+        self._make_yml(tmp_path, "inactive", is_active=False)
+        result = load_active_schedules(str(tmp_path))
+        assert len(result) == 1
+        assert result[0][0] == "active"
+
+    def test_skips_schedules_without_credentials(self, tmp_path, capsys):
+        self._make_yml(tmp_path, "nocreds", include_credentials=False)
+        result = load_active_schedules(str(tmp_path))
+        assert result == []
+        captured = capsys.readouterr()
+        assert "no credentials" in captured.out
+
+    def test_skips_invalid_yaml(self, tmp_path, capsys):
+        (tmp_path / "bad.yml").write_text("timezone: [[[invalid")
+        result = load_active_schedules(str(tmp_path))
+        assert result == []
+        captured = capsys.readouterr()
+        assert "bad" in captured.out
+
+    def test_empty_directory(self, tmp_path):
+        result = load_active_schedules(str(tmp_path))
+        assert result == []
+
+    def test_returns_rules_data(self, tmp_path):
+        self._make_yml(tmp_path, "bert")
+        result = load_active_schedules(str(tmp_path))
+        name, rules = result[0]
+        assert name == "bert"
+        assert rules.timezone == "Europe/Madrid"
+        assert rules.credentials.email == "a@b.com"

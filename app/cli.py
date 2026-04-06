@@ -239,7 +239,7 @@ def run_due(
 @app.command(name="list-tutors")
 def list_tutors():
     """
-    List all available tutors and refresh teachers.json cache.
+    List all available tutors and refresh data/teachers.json cache.
     """
     try:
         with authed_client() as client:

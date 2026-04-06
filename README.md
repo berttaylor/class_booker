@@ -18,7 +18,7 @@ Python CLI tool that automates Spanish class booking by calling the booking plat
     ```bash
     ./setup.sh
     ```
-5.  Fill in your credentials in `.env`.
+5.  Fill in `.env` with the master credentials (used by `populate-teachers`) and optional Pushover tokens. Then fill in your per-account booking credentials in `scheduling_rules/bert.yml` under `credentials:`.
 6.  Fetch the teacher list and create `data/teachers.json` (required before `run-due` will work):
     ```bash
     python main.py populate-teachers
@@ -40,6 +40,13 @@ Each rule books 1 or 2 consecutive 30-minute slots on a given weekday. Edit `sch
 
 ```yaml
 timezone: Europe/Madrid
+
+settings:
+  is_active: true        # set to false to pause this schedule without deleting it
+
+credentials:
+  email: user@example.com
+  password: yourpassword  # per-account credentials used for booking
 
 booking:
   open_offset_days: 7

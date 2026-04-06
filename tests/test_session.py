@@ -12,7 +12,7 @@ _LOGIN_FAIL = {"status": "error", "message": "Invalid credentials"}
 
 class TestAuthedClient:
     def test_yields_client_with_token_on_success(self, monkeypatch):
-        monkeypatch.setattr(session_module, "login", lambda client, use_cache=True: _VALID_TOKEN)
+        monkeypatch.setattr(session_module, "login", lambda client, creds, cache_file, use_cache=True: _VALID_TOKEN)
         monkeypatch.setattr(session_module, "app_config", type("C", (), {"base_url": TEST_BASE_URL})())
 
         from app.services.session import authed_client
@@ -20,7 +20,7 @@ class TestAuthedClient:
             assert client.client.headers.get("Authorization") == f"Bearer {_VALID_TOKEN}"
 
     def test_raises_on_login_failure(self, monkeypatch):
-        monkeypatch.setattr(session_module, "login", lambda client, use_cache=True: None)
+        monkeypatch.setattr(session_module, "login", lambda client, creds, cache_file, use_cache=True: None)
         monkeypatch.setattr(session_module, "app_config", type("C", (), {"base_url": TEST_BASE_URL})())
 
         from app.services.session import authed_client
@@ -29,7 +29,7 @@ class TestAuthedClient:
                 pass
 
     def test_client_closed_after_exit(self, monkeypatch):
-        monkeypatch.setattr(session_module, "login", lambda client, use_cache=True: _VALID_TOKEN)
+        monkeypatch.setattr(session_module, "login", lambda client, creds, cache_file, use_cache=True: _VALID_TOKEN)
         monkeypatch.setattr(session_module, "app_config", type("C", (), {"base_url": TEST_BASE_URL})())
 
         from app.services.session import authed_client
@@ -39,7 +39,7 @@ class TestAuthedClient:
         assert inner_client.client.is_closed
 
     def test_client_closed_even_on_exception(self, monkeypatch):
-        monkeypatch.setattr(session_module, "login", lambda client, use_cache=True: _VALID_TOKEN)
+        monkeypatch.setattr(session_module, "login", lambda client, creds, cache_file, use_cache=True: _VALID_TOKEN)
         monkeypatch.setattr(session_module, "app_config", type("C", (), {"base_url": TEST_BASE_URL})())
 
         from app.services.session import authed_client
@@ -53,7 +53,7 @@ class TestAuthedClient:
 
     def test_use_cache_false_passed_to_login(self, monkeypatch):
         calls = []
-        def mock_login(client, use_cache=True):
+        def mock_login(client, creds, cache_file, use_cache=True):
             calls.append(use_cache)
             return _VALID_TOKEN
 
@@ -70,7 +70,7 @@ class TestAuthedClient:
 class TestEnsureFreshToken:
     def test_updates_token_on_success(self, monkeypatch):
         new_token = "header.eyJleHAiOiA5OTk5OTk5OTk5fQ.new"
-        monkeypatch.setattr(session_module, "login", lambda client, use_cache=True: new_token)
+        monkeypatch.setattr(session_module, "login", lambda client, creds, cache_file, use_cache=True: new_token)
 
         client = BookingClient(base_url=TEST_BASE_URL)
         client.set_token(_VALID_TOKEN)
@@ -81,7 +81,7 @@ class TestEnsureFreshToken:
         client.close()
 
     def test_returns_false_on_login_failure(self, monkeypatch):
-        monkeypatch.setattr(session_module, "login", lambda client, use_cache=True: None)
+        monkeypatch.setattr(session_module, "login", lambda client, creds, cache_file, use_cache=True: None)
 
         client = BookingClient(base_url=TEST_BASE_URL)
         result = ensure_fresh_token(client)
@@ -90,7 +90,7 @@ class TestEnsureFreshToken:
         client.close()
 
     def test_token_unchanged_on_failure(self, monkeypatch):
-        monkeypatch.setattr(session_module, "login", lambda client, use_cache=True: None)
+        monkeypatch.setattr(session_module, "login", lambda client, creds, cache_file, use_cache=True: None)
 
         client = BookingClient(base_url=TEST_BASE_URL)
         client.set_token(_VALID_TOKEN)
@@ -101,7 +101,7 @@ class TestEnsureFreshToken:
 
     def test_calls_login_with_use_cache_false(self, monkeypatch):
         calls = []
-        def mock_login(client, use_cache=True):
+        def mock_login(client, creds, cache_file, use_cache=True):
             calls.append(use_cache)
             return _VALID_TOKEN
 

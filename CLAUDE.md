@@ -53,8 +53,12 @@ web.py               — Flask schedule editor (browser UI with validation)
 
 **Configuration layers:**
 - `config.yaml` — API base URL and endpoint paths → `AppConfig` via `app/config.py`
-- `.env` — login credentials, optional Pushover tokens → `Settings`
-- `scheduling_rules/bert.yml` — automated booking rules → `SchedulingRules` via `app/rules.py` (edit directly or via `python web.py`)
+- `.env` — master login credentials (used by `populate-teachers`) and optional Pushover tokens → `Settings`
+- `scheduling_rules/*.yml` — one file per user/schedule, each containing:
+  - `credentials` — per-account email/password used for booking (supports multiple accounts in parallel)
+  - `settings.is_active` — whether this schedule is currently active
+  - `timezone`, `booking`, `rules` — booking config and rules as before
+  - Edit directly or via `python web.py`
 
 **Scheduled jobs** (two independent launchd jobs, all managed by `setup.sh`):
 - `run-due` (:29, :59) — reads local `scheduling_rules/bert.yml`, checks for due bookings, books.

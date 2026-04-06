@@ -164,6 +164,7 @@ logs/
 .DS_Store
 
 # User level stuff
-scheduling_rules/*.yml
-*.plist
+scheduling_rules/*
+cache/*
+runners/*
 

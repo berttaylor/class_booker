@@ -6,16 +6,20 @@ import random
 import pytz
 from datetime import datetime as dt, timedelta, timezone
 
+from pathlib import Path
+
 from app.api.auth import login, is_token_expired
 from app.notifications import send_push
 from app.api.availability import get_available_teachers
 from app.api.booking import get_bookings, book_lesson
 from app.client import BookingClient
-from app.config import app_config, settings
-from app.rules import load_scheduling_rules
+from app.config import app_config
+from app.rules import load_active_schedules, SchedulingRules
 from app.services.session import ensure_fresh_token
 from app.teachers import load_teacher_cache, validate_rules_against_cache
 from app.utils import get_server_time
+
+CACHE_DIR = Path(__file__).parent.parent.parent / "cache"
 
 LOCK_FILE = ".run_due.lock"
 
@@ -337,75 +341,76 @@ def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_b
 
 
 # ---------------------------------------------------------------------------
-# Main entry point
+# Single-schedule runner
 # ---------------------------------------------------------------------------
 
-def run_due_process(force: bool = False, force_soft: bool = False):
-    lock_f = acquire_lock()
-    if not lock_f:
-        print("Another instance is already running. Exiting.")
+def _run_schedule(
+    schedule_name: str,
+    rules_data: SchedulingRules,
+    cache: dict,
+    force: bool,
+    force_soft: bool,
+):
+    """Runs the booking process for one schedule file end-to-end."""
+    prefix = f"[{schedule_name}]"
+    actual_force = force or force_soft
+
+    try:
+        validate_rules_against_cache(rules_data, cache)
+    except ValueError as e:
+        print(f"{prefix} Schedule error: {e}")
+        send_push(f"[{schedule_name}] Schedule validation failed: {e}", priority=1)
         return
 
-    actual_force = force or force_soft
+    local_tz = pytz.timezone(rules_data.timezone)
+    now_local = dt.now(timezone.utc).astimezone(local_tz)
+    timestamp = now_local.strftime("%Y-%m-%d %H:%M:%S")
+
+    # Phase 1: local clock only — no API calls
+    due_rules, rule_lesson_times, rule_open_times, all_upcoming = _evaluate_rules(rules_data, now_local)
+    _apply_force_flag(actual_force, force_soft, due_rules, all_upcoming, rule_lesson_times, rule_open_times)
+
+    if not due_rules:
+        if all_upcoming:
+            all_upcoming.sort(key=lambda x: x[0])
+            next_open_dt, next_rule, next_lesson_dt = all_upcoming[0]
+            time_until = next_open_dt - now_local
+            total_seconds = int(time_until.total_seconds())
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            print(f"{prefix} [{timestamp}] Nothing to book")
+            print(f"  Next window: {next_open_dt.strftime('%Y-%m-%d %H:%M')} (in {hours}h {minutes}m {seconds}s)")
+            print(f"  For class:   {next_lesson_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})")
+        else:
+            print(f"{prefix} [{timestamp}] Nothing to book — no upcoming rules found.")
+        return
+
+    # Phase 2: something is due — authenticate and sync time
+    print(f"{prefix} [{timestamp}] Booking due — processing {len(due_rules)} rule(s)")
+
+    cache_file = CACHE_DIR / f".token_cache_{schedule_name}.json"
+    credentials = {"email": rules_data.credentials.email, "password": rules_data.credentials.password}
+
     client = BookingClient(base_url=app_config.base_url)
     try:
-        rules_data = load_scheduling_rules()
-        local_tz = pytz.timezone(rules_data.timezone)
-        now_local = dt.now(timezone.utc).astimezone(local_tz)
-        timestamp = now_local.strftime("%Y-%m-%d %H:%M:%S")
-
-        # Teacher cache validation
-        cache = load_teacher_cache()
-        if not cache:
-            print("  No teachers cache — run: python main.py populate-teachers")
-            return
-
-        try:
-            validate_rules_against_cache(rules_data, cache)
-        except ValueError as e:
-            print(f"[{timestamp}] Schedule error: {e}")
-            send_push(f"Schedule validation failed: {e}", priority=1)
-            return
-
-        # Phase 1: local clock only — no API calls
-        due_rules, rule_lesson_times, rule_open_times, all_upcoming = _evaluate_rules(rules_data, now_local)
-        _apply_force_flag(actual_force, force_soft, due_rules, all_upcoming, rule_lesson_times, rule_open_times)
-
-        if not due_rules:
-            if all_upcoming:
-                all_upcoming.sort(key=lambda x: x[0])
-                next_open_dt, next_rule, next_lesson_dt = all_upcoming[0]
-                time_until = next_open_dt - now_local
-                total_seconds = int(time_until.total_seconds())
-                hours, remainder = divmod(total_seconds, 3600)
-                minutes, seconds = divmod(remainder, 60)
-                print(f"[{timestamp}] Nothing to book")
-                print(f"  Next window: {next_open_dt.strftime('%Y-%m-%d %H:%M')} (in {hours}h {minutes}m {seconds}s)")
-                print(f"  For class:   {next_lesson_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})")
-            else:
-                print(f"[{timestamp}] Nothing to book — no upcoming rules found.")
-            return
-
-        # Phase 2: something is due — authenticate and sync time
-        print(f"[{timestamp}] Booking due — processing {len(due_rules)} rule(s)")
-        token = login(client)
+        token = login(client, credentials, cache_file)
         if not token:
-            print("  Auth:   FAILED — check credentials in .env")
-            send_push("Authentication failed — check credentials in .env", priority=1)
+            print(f"{prefix}   Auth:   FAILED — check credentials in scheduling_rules/{schedule_name}.yml")
+            send_push(f"[{schedule_name}] Authentication failed — check credentials in YAML", priority=1)
             return
         client.set_token(token)
 
         now_utc, drift = get_synced_now(client)
         now_local = now_utc.astimezone(local_tz)
         drift_icon = "✓" if abs(drift) < 5 else "✗"
-        print(f"  Auth:   {settings.teacher_sync_login_email} ✓  (drift: {drift:+.3f}s {drift_icon})")
+        print(f"{prefix}   Auth:   {rules_data.credentials.email} ✓  (drift: {drift:+.3f}s {drift_icon})")
 
         # Re-evaluate with synced time for accurate wait calculations
         due_rules, rule_lesson_times, rule_open_times, _ = _evaluate_rules(rules_data, now_local)
         _apply_force_flag(actual_force, force_soft, due_rules, all_upcoming, rule_lesson_times, rule_open_times)
 
         forced_label = " (forced)" if actual_force else ""
-        print(f"  Rules:  {', '.join([slot_key for _, slot_key in due_rules])}{forced_label}")
+        print(f"{prefix}   Rules:  {', '.join([slot_key for _, slot_key in due_rules])}{forced_label}")
 
         bookings = get_bookings(client)
         approved_bookings = [
@@ -420,24 +425,24 @@ def run_due_process(force: bool = False, force_soft: bool = False):
             target_date_str = target_dt.strftime("%Y-%m-%d")
             target_start_time_str = target_dt.strftime("%H:%M:00")
 
-            print(f"\n  [{slot_key}] {target_date_str} {target_start_time_str} ({rules_data.timezone})")
+            print(f"\n{prefix}   [{slot_key}] {target_date_str} {target_start_time_str} ({rules_data.timezone})")
 
             if _is_already_booked(approved_bookings, target_date_str, target_start_time_str):
-                print(f"  [{slot_key}] Already booked — skipping")
+                print(f"{prefix}   [{slot_key}] Already booked — skipping")
                 continue
 
             available_teachers = get_available_teachers(client, target_slot_iso)
             available_info = ", ".join([f"{t['name']} ({t['id']})" for t in available_teachers])
-            print(f"  Available:   {available_info}")
+            print(f"{prefix}   Available:   {available_info}")
 
             candidates, used_fallback = _get_candidates(rule, available_teachers, approved_bookings, target_date_str, target_dt)
             if not candidates:
-                print("  No suitable teachers available — skipping")
-                send_push(f"No teachers available for {slot_key} on {target_date_str} at {target_start_time_str}", priority=1)
+                print(f"{prefix}   No suitable teachers available — skipping")
+                send_push(f"[{schedule_name}] No teachers available for {slot_key} on {target_date_str} at {target_start_time_str}", priority=1)
                 continue
 
             candidate_order = ", ".join([f"{c['name']} ({c['id']})" for c in candidates])
-            print(f"  Candidates:  {candidate_order}")
+            print(f"{prefix}   Candidates:  {candidate_order}")
 
             _wait_for_window(booking_open_dt, now_local, local_tz, client)
 
@@ -445,12 +450,12 @@ def run_due_process(force: bool = False, force_soft: bool = False):
                 client.client.headers.get("Authorization", "").replace("Bearer ", ""),
                 buffer_seconds=60,
             ):
-                print("  Re-auth:     token near-expiry, refreshing...")
+                print(f"{prefix}   Re-auth:     token near-expiry, refreshing...")
                 if ensure_fresh_token(client):
-                    print("  Re-auth:     success")
+                    print(f"{prefix}   Re-auth:     success")
                 else:
-                    print("  Re-auth:     FAILED — booking may fail")
-                    send_push(f"Token refresh failed before booking {slot_key} — booking may fail", priority=1)
+                    print(f"{prefix}   Re-auth:     FAILED — booking may fail")
+                    send_push(f"[{schedule_name}] Token refresh failed before booking {slot_key} — booking may fail", priority=1)
 
             success = _attempt_booking(
                 client, candidates, target_slot_iso, force_soft,
@@ -458,12 +463,39 @@ def run_due_process(force: bool = False, force_soft: bool = False):
                 used_fallback=used_fallback, slot_key=slot_key,
             )
             if not success:
-                print(f"  FAILED:      all teachers exhausted for {slot_key}")
-                send_push(f"Could not book {slot_key} on {target_date_str} at {target_start_time_str} — all teachers failed", priority=1)
+                print(f"{prefix}   FAILED:      all teachers exhausted for {slot_key}")
+                send_push(f"[{schedule_name}] Could not book {slot_key} on {target_date_str} at {target_start_time_str} — all teachers failed", priority=1)
 
-        print("\nBooking process completed.")
+        print(f"\n{prefix} Booking process completed.")
 
     finally:
         client.close()
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
+def run_due_process(force: bool = False, force_soft: bool = False):
+    lock_f = acquire_lock()
+    if not lock_f:
+        print("Another instance is already running. Exiting.")
+        return
+
+    try:
+        cache = load_teacher_cache()
+        if not cache:
+            print("  No teachers cache — run: python main.py populate-teachers")
+            return
+
+        schedules = load_active_schedules()
+        if not schedules:
+            print("  No active schedules found in scheduling_rules/")
+            return
+
+        for schedule_name, rules_data in schedules:
+            _run_schedule(schedule_name, rules_data, cache, force, force_soft)
+
+    finally:
         release_lock(lock_f)
         print()
