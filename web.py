@@ -30,23 +30,20 @@ PAGE = """
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #eee; height: 100vh; display: flex; flex-direction: column; }
-    header { padding: 12px 16px; background: #16213e; border-bottom: 1px solid #0f3460; }
-    .title-row { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
-    header h1 { font-size: 16px; font-weight: 600; }
-    .toolbar { display: flex; align-items: center; gap: 8px; }
-    #status { font-size: 12px; color: #aaa; }
-    #status.ok { background: #1a4731; color: #4caf82; }
-    #status.error { background: #4a1a1a; color: #f87171; }
-    a.home { padding: 8px 14px; background: #0f3460; border: 1px solid #1a5a8a; color: #eee; border-radius: 6px; font-size: 14px; text-decoration: none; white-space: nowrap; }
-    a.home:hover { background: #1a5a8a; }
-    .font-btns { display: flex; border: 1px solid #1a5a8a; border-radius: 6px; overflow: hidden; }
-    .font-btn { padding: 6px 12px; background: #0f3460; border: none; color: #eee; cursor: pointer; font-size: 16px; line-height: 1; }
-    .font-btn:hover { background: #1a5a8a; }
-    .font-btn + .font-btn { border-left: 1px solid #1a5a8a; }
-    button.add-rule { padding: 8px 14px; background: #0f3460; border: 1px solid #1a5a8a; color: #eee; border-radius: 6px; cursor: pointer; font-size: 14px; white-space: nowrap; }
-    button.add-rule:hover { background: #1a5a8a; }
-    button.save { padding: 8px 16px; background: #1a4731; border: 1px solid #2d6a4f; color: #4caf82; border-radius: 6px; cursor: pointer; font-size: 14px; white-space: nowrap; font-weight: 600; }
+    header { padding: 12px 16px; background: #16213e; border-bottom: 1px solid #0f3460; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .header-title { flex: 1; min-width: 200px; }
+    .header-title h1 { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #status { font-size: 11px; color: #666; margin-top: 2px; }
+    #status.ok { color: #4caf82; }
+    #status.error { color: #f87171; }
+    .icon-btns { display: flex; border: 1px solid #1a5a8a; border-radius: 6px; overflow: hidden; flex-shrink: 0; }
+    .icon-btn { padding: 7px 11px; background: #0f3460; border: none; color: #eee; cursor: pointer; font-size: 15px; line-height: 1; white-space: nowrap; }
+    .icon-btn:hover { background: #1a5a8a; }
+    .icon-btn + .icon-btn { border-left: 1px solid #1a5a8a; }
+    button.save { padding: 8px 18px; background: #1a4731; border: 1px solid #2d6a4f; color: #4caf82; border-radius: 6px; cursor: pointer; font-size: 14px; white-space: nowrap; font-weight: 600; flex-shrink: 0; }
     button.save:hover { background: #2d6a4f; }
+    a.home { color: #aaa; font-size: 20px; text-decoration: none; flex-shrink: 0; line-height: 1; }
+    a.home:hover { color: #eee; }
     .CodeMirror { flex: 1; height: 100%; font-size: 14px; line-height: 1.6; }
     #editor-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
     #picker { display: none; position: absolute; top: 0; right: 0; bottom: 0; width: 240px; background: #16213e; border-left: 1px solid #0f3460; z-index: 10; flex-direction: column; }
@@ -61,20 +58,18 @@ PAGE = """
 </head>
 <body>
   <header>
-    <div class="title-row">
-      <h1>scheduling_rules/{{ name }}.yml</h1>
-      <span id="status">unsaved</span>
+    <a class="home" href="/" title="Home">&#8592;</a>
+    <div class="header-title">
+      <h1>{{ name | capitalize }}</h1>
+      <div id="status">unsaved</div>
     </div>
-    <div class="toolbar">
-      <a class="home" href="/">&#8592; Home</a>
-      <div class="font-btns">
-        <button class="font-btn" onclick="adjustFont(-1)">&#8722;</button>
-        <button class="font-btn" onclick="adjustFont(1)">&#43;</button>
-        <button class="font-btn" onclick="togglePicker()" title="Show teachers">&#128101;</button>
-      </div>
-      <button class="add-rule" onclick="addRule()">+ Rule</button>
-      <button class="save" onclick="save()">Save</button>
+    <div class="icon-btns">
+      <button class="icon-btn" onclick="adjustFont(1)"><img src="/static/icons/zoom_in.png" height="22" style="filter:invert(1)"></button>
+      <button class="icon-btn" onclick="adjustFont(-1)"><img src="/static/icons/zoom_out.png" height="22" style="filter:invert(1)"></button>
+      <button class="icon-btn" onclick="addRule()"><img src="/static/icons/add_rule.webp" height="24" style="filter:invert(1);margin:-3px"></button>
+      <button class="icon-btn" onclick="togglePicker()"><img src="/static/icons/teachers.png" height="24" style="filter:invert(1);margin:-3px"></button>
     </div>
+    <button class="save" onclick="save()">Save</button>
   </header>
   <div id="editor-wrap">
     <textarea id="editor"></textarea>
@@ -228,7 +223,7 @@ INDEX_PAGE = """
     <h2>Schedules</h2>
     <ul>
       {% for name in schedules %}
-      <li><a href="/schedules/{{ name }}">scheduling_rules/{{ name }}.yml</a></li>
+      <li><a href="/schedules/{{ name | capitalize }}">{{ name | capitalize }}</a></li>
       {% endfor %}
     </ul>
   </section>
@@ -236,7 +231,7 @@ INDEX_PAGE = """
     <h2>Logs</h2>
     <ul>
       {% for name in logs %}
-      <li><a href="/logs/{{ name }}">logs/{{ name }}.log</a></li>
+      <li><a href="/logs/{{ name | capitalize }}">{{ name | capitalize }}</a></li>
       {% endfor %}
     </ul>
   </section>
@@ -250,7 +245,7 @@ LOGS_PAGE = """
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ name }}.log</title>
+  <title>{{ name }}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #eee; height: 100vh; display: flex; flex-direction: column; }
@@ -271,7 +266,7 @@ LOGS_PAGE = """
 </head>
 <body>
   <header>
-    <h1>logs/{{ name }}.log</h1>
+    <h1>{{ name | capitalize }}</h1>
     <div class="toolbar">
       <a class="home" href="/">&#8592; Home</a>
       <div class="font-btns">
