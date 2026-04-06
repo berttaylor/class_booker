@@ -131,3 +131,21 @@ def load_active_schedules(
             continue
         schedules.append((name, rules))
     return schedules
+
+
+def sort_rules(data: dict) -> dict:
+    """
+    Sorts the rules list in the provided data dictionary by day of week
+    and then by start time.
+    """
+    if "rules" in data and isinstance(data["rules"], list):
+        # Create a mapping for weekday sorting (mon=0, tue=1, etc.)
+        weekday_order = {day: i for i, day in enumerate(VALID_WEEKDAYS)}
+
+        data["rules"].sort(
+            key=lambda r: (
+                weekday_order.get(r.get("weekday"), 999),
+                r.get("start_time", ""),
+            )
+        )
+    return data

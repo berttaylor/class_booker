@@ -15,6 +15,25 @@ from app.teachers import load_teacher_cache, validate_rules_against_cache
 BASE_DIR = Path(__file__).parent
 NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
+
+class IndentDumper(yaml.SafeDumper):
+    def increase_indent(self, flow=False, indentless=False):
+        return super(IndentDumper, self).increase_indent(flow, False)
+
+
+def _extract_header_comments(content: str) -> str:
+    lines = content.splitlines()
+    header = []
+    for line in lines:
+        if line.strip().startswith("#") or not line.strip():
+            header.append(line)
+        else:
+            break
+    if not header:
+        return ""
+    return "\n".join(header) + "\n"
+
+
 app = Flask(__name__)
 
 PAGE = """
@@ -189,6 +208,11 @@ PAGE = """
       const data = await resp.json();
       if (data.ok) {
         setStatus('ok', 'saved');
+        if (data.content) {
+          const cursor = cm.getCursor();
+          cm.setValue(data.content);
+          cm.setCursor(cursor);
+        }
       } else {
         setStatus('error', data.error);
       }
@@ -444,6 +468,33 @@ def save(name: str):
         msg = str(e).split("\n")[0]
         return jsonify(ok=False, error=f"Invalid YAML — {msg}")
 
+    # Sort rules helper
+    from app.rules import sort_rules
+
+    data = sort_rules(data)
+
+    # Generate sorted YAML string with improved formatting
+    header = _extract_header_comments(content)
+    content = yaml.dump(
+        data,
+        Dumper=IndentDumper,
+        sort_keys=False,
+        default_flow_style=False,
+        allow_unicode=True,
+    )
+
+    # Post-process to add spaces between major sections and rules
+    for key in ["settings:", "credentials:", "rules:"]:
+        content = content.replace(f"\n{key}", f"\n\n{key}")
+
+    # Add blank lines between rules
+    content = content.replace("\n  - ", "\n\n  - ")
+    # But not before the first rule
+    content = content.replace("rules:\n\n  - ", "rules:\n  - ")
+
+    # Prepend original header comments
+    content = header + content.strip() + "\n"
+
     # Validate rules
     try:
         rules = _load_rules_from_dict(data)
@@ -468,7 +519,7 @@ def save(name: str):
             return jsonify(ok=False, error=str(e))
 
     path.write_text(content)
-    return jsonify(ok=True)
+    return jsonify(ok=True, content=content)
 
 
 @app.route("/logs/<name>")

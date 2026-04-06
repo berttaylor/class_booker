@@ -8,6 +8,7 @@ from app.rules import (
     BookingRule,
     ScheduleSettings,
     ScheduleCredentials,
+    sort_rules,
 )
 from app import logger
 
@@ -314,3 +315,38 @@ class TestLoadActiveSchedules:
         assert name == "bert"
         assert rules.timezone == "Europe/Madrid"
         assert rules.credentials.email == "a@b.com"
+
+
+class TestSortRules:
+    def test_sort_rules_by_day_and_time(self):
+        data = {
+            "rules": [
+                {"weekday": "tue", "start_time": "13:00"},
+                {"weekday": "mon", "start_time": "18:00"},
+                {"weekday": "mon", "start_time": "13:00"},
+                {"weekday": "wed", "start_time": "10:00"},
+            ]
+        }
+        sorted_data = sort_rules(data)
+        expected = [
+            {"weekday": "mon", "start_time": "13:00"},
+            {"weekday": "mon", "start_time": "18:00"},
+            {"weekday": "tue", "start_time": "13:00"},
+            {"weekday": "wed", "start_time": "10:00"},
+        ]
+        assert sorted_data["rules"] == expected
+
+    def test_sort_rules_handles_missing_rules(self):
+        data = {"timezone": "UTC"}
+        assert sort_rules(data) == data
+
+    def test_sort_rules_handles_invalid_weekday(self):
+        data = {
+            "rules": [
+                {"weekday": "unknown", "start_time": "13:00"},
+                {"weekday": "mon", "start_time": "13:00"},
+            ]
+        }
+        sorted_data = sort_rules(data)
+        assert sorted_data["rules"][0]["weekday"] == "mon"
+        assert sorted_data["rules"][1]["weekday"] == "unknown"
