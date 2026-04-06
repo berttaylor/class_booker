@@ -81,7 +81,13 @@ class ScheduleCredentials(BaseModel):
 
 class SchedulingRules(BaseModel):
     timezone: str
-    rules: List[BookingRule]
+    rules: List[BookingRule] = []
+
+    @field_validator("rules", mode="before")
+    @classmethod
+    def coerce_none_to_empty(cls, v):
+        return v or []
+
     settings: ScheduleSettings = ScheduleSettings()
     credentials: ScheduleCredentials | None = None
 
