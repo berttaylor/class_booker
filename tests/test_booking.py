@@ -10,6 +10,7 @@ _AUTHED_TOKEN = "header.eyJleHAiOiA5OTk5OTk5OTk5fQ.sig"
 # book_lesson — payload construction (most critical tests)
 # ---------------------------------------------------------------------------
 
+
 class TestBookLessonPayload(BaseTest):
     """Verify the exact payload sent to the API for each timezone scenario."""
 
@@ -20,6 +21,7 @@ class TestBookLessonPayload(BaseTest):
     def _get_payload(self, lesson_datetime):
         """Helper: call book_lesson and return the captured request body."""
         import json as _json
+
         captured = {}
 
         def capture(request):
@@ -61,8 +63,8 @@ class TestBookLessonPayload(BaseTest):
         """
         payload = self._get_payload("2026-04-08T22:30:00+00:00")
 
-        assert payload["date"] == "2026-04-09"   # Madrid date
-        assert payload["start_time"] == "22:30"   # UTC time
+        assert payload["date"] == "2026-04-09"  # Madrid date
+        assert payload["start_time"] == "22:30"  # UTC time
         assert payload["end_time"] == "23:00"
 
     def test_service_id_is_1(self):
@@ -80,6 +82,7 @@ class TestBookLessonPayload(BaseTest):
     def test_teacher_id_coerced_to_string(self):
         """teacher_id passed as int should become a string staff_id."""
         import json as _json
+
         captured = {}
 
         def capture(request):
@@ -127,6 +130,7 @@ class TestBookLessonPayload(BaseTest):
 # get_bookings
 # ---------------------------------------------------------------------------
 
+
 class TestGetBookings(BaseTest):
     def setup_method(self, method):
         super().setup_method(method)
@@ -143,7 +147,9 @@ class TestGetBookings(BaseTest):
 
     def test_returns_empty_on_failure_status(self):
         self.router.post("/auth/booking/list").mock(
-            return_value=httpx.Response(200, json={"status": "error", "message": "Unauthorized"})
+            return_value=httpx.Response(
+                200, json={"status": "error", "message": "Unauthorized"}
+            )
         )
 
         assert get_bookings(self.mock_client) == []
@@ -167,6 +173,7 @@ class TestGetBookings(BaseTest):
 # cancel_booking
 # ---------------------------------------------------------------------------
 
+
 class TestCancelBooking(BaseTest):
     def setup_method(self, method):
         super().setup_method(method)
@@ -174,7 +181,9 @@ class TestCancelBooking(BaseTest):
 
     def test_cancel_success(self):
         self.router.post("/auth/booking/cancel/1001").mock(
-            return_value=httpx.Response(200, json={"status": "success", "message": "Booking cancelled"})
+            return_value=httpx.Response(
+                200, json={"status": "success", "message": "Booking cancelled"}
+            )
         )
 
         result = cancel_booking(self.mock_client, "1001")

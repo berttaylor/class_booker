@@ -2,6 +2,7 @@ import json
 from datetime import date
 from pathlib import Path
 
+from app import logger
 from app.client import BookingClient
 from app.api.availability import get_tutors_map
 from app.config import settings
@@ -50,7 +51,9 @@ def populate_teachers(client: BookingClient) -> None:
         name = data["name"]
         if name not in teachers:
             teachers[name] = {
-                "id": int(next(tid for tid, d in tutor_map.items() if d["name"] == name)),
+                "id": int(
+                    next(tid for tid, d in tutor_map.items() if d["name"] == name)
+                ),
                 "status": "ACTIVE",
             }
 
@@ -72,7 +75,11 @@ def validate_rules_against_cache(rules_data, cache: dict) -> None:
             if name not in teachers:
                 unknown.append(f"'{name}' (rule: {rule.id})")
             elif teachers[name]["status"] == "REMOVED":
-                print(f"  Warning: '{name}' in rule '{rule.id}' is marked REMOVED in data/teachers.json")
+                logger.warning(
+                    f"Teacher '{name}' in rule '{rule.id}' is marked REMOVED in data/teachers.json"
+                )
 
     if unknown:
-        raise ValueError(f"Unknown teacher names in scheduling rules: {', '.join(unknown)}")
+        raise ValueError(
+            f"Unknown teacher names in scheduling rules: {', '.join(unknown)}"
+        )

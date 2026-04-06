@@ -10,25 +10,33 @@ def normalize_datetime(dt_str: str) -> str:
     Normalizes a datetime string to UTC format: YYYY-MM-DDTHH:MM:00+00:00
     """
     try:
-        d = dt.fromisoformat(dt_str.replace('Z', '+00:00'))
+        d = dt.fromisoformat(dt_str.replace("Z", "+00:00"))
         d_utc = d.astimezone(timezone.utc)
-        return d_utc.strftime('%Y-%m-%dT%H:%M:00+00:00')
+        return d_utc.strftime("%Y-%m-%dT%H:%M:00+00:00")
     except Exception:
         return dt_str
+
 
 def get_server_time(client: BookingClient) -> Dict[str, Any]:
     """
     Fetches the server time from the backend.
     """
     response = client.get(app_config.server_time_endpoint)
-    
+
     if response.status_code != 200:
-        return {"status": "error", "message": f"HTTP Error {response.status_code}: {response.text}"}
-        
+        return {
+            "status": "error",
+            "message": f"HTTP Error {response.status_code}: {response.text}",
+        }
+
     try:
         # Based on the provided curl, we expect a JSON response.
         # Let's assume it returns a dict with the time or status.
         return response.json()
     except Exception as e:
         # If it's not JSON, maybe it's a raw string or we failed to parse
-        return {"status": "error", "message": f"Failed to parse server time: {e}", "raw": response.text}
+        return {
+            "status": "error",
+            "message": f"Failed to parse server time: {e}",
+            "raw": response.text,
+        }

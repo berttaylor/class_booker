@@ -3,6 +3,7 @@ from typing import Any, Dict
 
 import pytz
 
+from app import logger
 from app.client import BookingClient
 from app.config import app_config
 from app.utils import normalize_datetime
@@ -28,7 +29,7 @@ def get_tutors_map(client: BookingClient) -> Dict[str, Dict[str, Any]]:
                 tutor_map[tid] = {"name": name}
         return tutor_map
     except Exception as e:
-        print(f"Error fetching tutors list: {e}")
+        logger.error(f"Error fetching tutors list: {e}")
         return {}
 
 
@@ -57,7 +58,7 @@ def get_teacher_slots(client: BookingClient, teacher_id: str) -> list:
 
         return teacher_slots
     except Exception as e:
-        print(f"Error fetching teacher slots: {e}")
+        logger.error(f"Error fetching teacher slots: {e}")
         return []
 
 
@@ -73,7 +74,7 @@ def get_available_teachers(client: BookingClient, lesson_datetime: str) -> list:
     response = client.post(app_config.availability_endpoint, json=data)
 
     if response.status_code != 200:
-        print(f"Failed to fetch availability. Status: {response.status_code}")
+        logger.error(f"Failed to fetch availability. Status: {response.status_code}")
         return []
 
     try:
@@ -94,23 +95,28 @@ def get_available_teachers(client: BookingClient, lesson_datetime: str) -> list:
                 if not isinstance(slots, list):
                     continue
                 for slot in slots:
-                    if slot.get("start_time") == target_utc and slot.get("status") == "available":
+                    if (
+                        slot.get("start_time") == target_utc
+                        and slot.get("status") == "available"
+                    ):
                         teacher_id_str = str(teacher_id)
                         tutor_data = tutor_map.get(teacher_id_str, {})
                         name = tutor_data.get("name", f"Teacher {teacher_id_str}")
                         local_tz = pytz.timezone(app_config.timezone)
                         start_time_local = (
-                            dt.fromisoformat(slot["start_time"].replace('Z', '+00:00'))
+                            dt.fromisoformat(slot["start_time"].replace("Z", "+00:00"))
                             .astimezone(local_tz)
                             .strftime("%H:%M")
                         )
-                        available_teachers.append({
-                            "id": teacher_id_str,
-                            "name": name,
-                            "start_time_local": start_time_local,
-                        })
+                        available_teachers.append(
+                            {
+                                "id": teacher_id_str,
+                                "name": name,
+                                "start_time_local": start_time_local,
+                            }
+                        )
                         break
         return available_teachers
     except Exception as e:
-        print(f"Error parsing availability response: {e}")
+        logger.error(f"Error parsing availability response: {e}")
         return []

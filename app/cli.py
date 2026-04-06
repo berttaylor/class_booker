@@ -4,6 +4,7 @@ from typing import Annotated
 
 import typer
 
+from app import logger
 from app.api.auth import get_cached_token, TOKEN_CACHE_FILE
 from app.api.availability import (
     get_available_teachers,
@@ -197,7 +198,11 @@ def populate_teachers_cmd():
     if not settings.populate_teachers_enabled:
         typer.echo("populate-teachers disabled (POPULATE_TEACHERS=false) — skipping")
         return
-    timestamp = dt.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    run_id = dt.now().strftime("%y%m%d%H%M%S")
+    logger.set_run_id(run_id)
+    logger.set_schedule("system")
+
     t0 = time.monotonic()
     try:
         with master_client() as client:
@@ -205,11 +210,9 @@ def populate_teachers_cmd():
             elapsed = time.monotonic() - t0
             cache = load_teacher_cache()
             teacher_count = len(cache.get("teachers", {}))
-            typer.echo(
-                f"[{timestamp}] Teachers sync — {elapsed:.2f}s — {teacher_count} teachers"
-            )
+            logger.info(f"Teachers sync — {elapsed:.2f}s — {teacher_count} teachers")
     except RuntimeError:
-        typer.echo(f"[{timestamp}] Teachers sync — FAILED — authentication error")
+        logger.error("Teachers sync — FAILED — authentication error")
 
 
 if __name__ == "__main__":

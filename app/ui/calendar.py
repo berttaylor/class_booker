@@ -19,7 +19,7 @@ def format_calendar(slots: list) -> str:
     days = defaultdict(list)
     for slot in slots:
         try:
-            start_utc = dt.fromisoformat(slot["start_time"].replace('Z', '+00:00'))
+            start_utc = dt.fromisoformat(slot["start_time"].replace("Z", "+00:00"))
             start_local = start_utc.astimezone(local_tz)
             day_str = start_local.strftime("%Y-%m-%d")
             slot_copy = slot.copy()
@@ -69,8 +69,12 @@ def format_calendar(slots: list) -> str:
         row = f"{time:<{time_col_width}} |"
         for day in full_date_range:
             slot_on_day = next(
-                (s for s in days.get(day, []) if s["_local_start"].strftime("%H:%M") == time),
-                None
+                (
+                    s
+                    for s in days.get(day, [])
+                    if s["_local_start"].strftime("%H:%M") == time
+                ),
+                None,
             )
             if slot_on_day:
                 status = slot_on_day.get("status", "")

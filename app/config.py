@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 class AppConfig(BaseModel):
     base_url: str
     timezone: str
@@ -16,6 +17,7 @@ class AppConfig(BaseModel):
     cancel_booking_endpoint: str
     server_time_endpoint: str
     tutors_list_endpoint: str
+
 
 class Settings(BaseSettings):
     config_path: Path = Path(__file__).parent.parent / "config.yaml"
@@ -35,7 +37,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def check_secondary_cache_path(self) -> "Settings":
-        if not self.populate_teachers_enabled and self.teachers_cache_path == "data/teachers.json":
+        if (
+            not self.populate_teachers_enabled
+            and self.teachers_cache_path == "data/teachers.json"
+        ):
             raise ValueError(
                 "POPULATE_TEACHERS=false requires TEACHERS_CACHE_PATH to be set to an "
                 "absolute path pointing at the primary clone's data/teachers.json"
@@ -48,10 +53,12 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+
 def load_app_config(path: Path) -> AppConfig:
     with open(path, "r") as f:
         config_data = yaml.safe_load(f)
     return AppConfig(**config_data)
+
 
 settings = Settings()
 app_config = load_app_config(settings.config_path)

@@ -4,10 +4,13 @@ import base64
 from pathlib import Path
 from typing import Optional
 
+from app import logger
 from app.client import BookingClient
 from app.config import app_config
 
-TOKEN_CACHE_FILE = Path(__file__).parent.parent.parent / "cache" / ".teacher_sync_token_cache.json"
+TOKEN_CACHE_FILE = (
+    Path(__file__).parent.parent.parent / "cache" / ".teacher_sync_token_cache.json"
+)
 
 
 def is_token_expired(token: str, buffer_seconds: int = 30) -> bool:
@@ -16,12 +19,12 @@ def is_token_expired(token: str, buffer_seconds: int = 30) -> bool:
     JWT is Header.Payload.Signature
     """
     try:
-        _, payload_b64, _ = token.split('.')
+        _, payload_b64, _ = token.split(".")
         missing_padding = len(payload_b64) % 4
         if missing_padding:
-            payload_b64 += '=' * (4 - missing_padding)
+            payload_b64 += "=" * (4 - missing_padding)
 
-        payload_json = base64.b64decode(payload_b64).decode('utf-8')
+        payload_json = base64.b64decode(payload_b64).decode("utf-8")
         payload = json.loads(payload_json)
 
         exp = payload.get("exp")
@@ -53,7 +56,7 @@ def _save_cached_token(token: str, cache_file: Path):
         with open(cache_file, "w") as f:
             json.dump({"access_token": token}, f)
     except Exception as e:
-        print(f"Warning: Failed to cache token: {e}")
+        logger.warning(f"Failed to cache token: {e}")
 
 
 def login(

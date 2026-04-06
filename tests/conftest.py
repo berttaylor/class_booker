@@ -20,6 +20,7 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 # HTTP client fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def mock_client():
     """
@@ -48,6 +49,7 @@ def authed_client(mock_client):
 # API response fixtures (loaded from JSON files)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def calendar_response():
     with open(FIXTURES_DIR / "calendar_response.json") as f:
@@ -70,10 +72,14 @@ def bookings_response():
 # JWT helper
 # ---------------------------------------------------------------------------
 
+
 def make_jwt(exp: int) -> str:
     """Build a minimal JWT with the given exp Unix timestamp (no real signing)."""
     import base64
-    header = base64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').rstrip(b"=").decode()
+
+    header = (
+        base64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').rstrip(b"=").decode()
+    )
     payload_data = json.dumps({"sub": "testuser", "exp": exp}).encode()
     payload = base64.urlsafe_b64encode(payload_data).rstrip(b"=").decode()
     return f"{header}.{payload}.fakesig"

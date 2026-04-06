@@ -11,6 +11,7 @@ from app.api.auth import is_token_expired, get_cached_token, _save_cached_token,
 # is_token_expired
 # ---------------------------------------------------------------------------
 
+
 class TestIsTokenExpired:
     def test_valid_token_not_expired(self):
         token = make_jwt(exp=int(time.time()) + 300)
@@ -38,6 +39,7 @@ class TestIsTokenExpired:
 
     def test_no_exp_claim(self):
         import base64
+
         header = base64.urlsafe_b64encode(b'{"alg":"HS256"}').rstrip(b"=").decode()
         payload = base64.urlsafe_b64encode(b'{"sub":"user"}').rstrip(b"=").decode()
         token = f"{header}.{payload}.sig"
@@ -49,6 +51,7 @@ class TestIsTokenExpired:
     def test_base64_padding_handled(self):
         # Construct a JWT whose payload b64 length is not a multiple of 4
         import base64
+
         header = base64.urlsafe_b64encode(b'{"alg":"HS256"}').rstrip(b"=").decode()
         # Payload that encodes to a non-padded-4 length after stripping '='
         raw = json.dumps({"exp": int(time.time()) + 300}).encode()
@@ -62,6 +65,7 @@ class TestIsTokenExpired:
 # ---------------------------------------------------------------------------
 # get_cached_token / _save_cached_token
 # ---------------------------------------------------------------------------
+
 
 class TestTokenCache:
     def test_cache_miss_when_no_file(self, tmp_path):
@@ -112,7 +116,9 @@ class TestLogin(BaseTest):
         fresh_token = make_jwt(exp=int(time.time()) + 3600)
 
         self.router.post("/auth/login").mock(
-            return_value=httpx.Response(200, json={"status": "success", "access_token": fresh_token})
+            return_value=httpx.Response(
+                200, json={"status": "success", "access_token": fresh_token}
+            )
         )
 
         result = login(self.mock_client, FAKE_CREDS, cache_file, use_cache=False)
@@ -122,7 +128,9 @@ class TestLogin(BaseTest):
         cache_file = tmp_path / ".cache.json"
 
         self.router.post("/auth/login").mock(
-            return_value=httpx.Response(401, json={"status": "error", "message": "Unauthorized"})
+            return_value=httpx.Response(
+                401, json={"status": "error", "message": "Unauthorized"}
+            )
         )
 
         result = login(self.mock_client, FAKE_CREDS, cache_file, use_cache=False)
@@ -132,7 +140,9 @@ class TestLogin(BaseTest):
         cache_file = tmp_path / ".cache.json"
 
         self.router.post("/auth/login").mock(
-            return_value=httpx.Response(200, json={"status": "error", "message": "Invalid credentials"})
+            return_value=httpx.Response(
+                200, json={"status": "error", "message": "Invalid credentials"}
+            )
         )
 
         result = login(self.mock_client, FAKE_CREDS, cache_file, use_cache=False)
@@ -144,7 +154,9 @@ class TestLogin(BaseTest):
         cache_file.write_text(json.dumps({"access_token": valid_token}))
 
         route = self.router.post("/auth/login").mock(
-            return_value=httpx.Response(200, json={"status": "success", "access_token": "new_token"})
+            return_value=httpx.Response(
+                200, json={"status": "success", "access_token": "new_token"}
+            )
         )
 
         result = login(self.mock_client, FAKE_CREDS, cache_file, use_cache=True)
@@ -158,7 +170,9 @@ class TestLogin(BaseTest):
         cache_file.write_text(json.dumps({"access_token": valid_token}))
 
         self.router.post("/auth/login").mock(
-            return_value=httpx.Response(200, json={"status": "success", "access_token": new_token})
+            return_value=httpx.Response(
+                200, json={"status": "success", "access_token": new_token}
+            )
         )
 
         result = login(self.mock_client, FAKE_CREDS, cache_file, use_cache=False)

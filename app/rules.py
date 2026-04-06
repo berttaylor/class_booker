@@ -3,6 +3,7 @@ import yaml
 import pytz
 from datetime import datetime as dt, timedelta
 from pathlib import Path
+from app import logger
 from pydantic import BaseModel, field_validator, model_validator
 from typing import List
 
@@ -122,12 +123,12 @@ def load_active_schedules(
         try:
             rules = load_scheduling_rules(str(path))
         except Exception as e:
-            print(f"[{name}] Skipping — failed to load: {e}")
+            logger.error(f"Skipping — failed to load: {e}", schedule=name)
             continue
         if not rules.settings.is_active:
             continue
         if rules.credentials is None:
-            print(f"[{name}] Skipping — no credentials block in YAML")
+            logger.warning("Skipping — no credentials block in YAML", schedule=name)
             continue
         schedules.append((name, rules))
     return schedules

@@ -23,6 +23,7 @@ from app.rules import (
 )
 from app.teachers import load_teacher_cache, validate_rules_against_cache
 from app.utils import get_server_time
+from app import logger
 
 CACHE_DIR = Path(__file__).parent.parent.parent / "cache"
 
@@ -237,11 +238,11 @@ def _get_candidates(
 
     used_fallback = False
     if not candidates and rule.allow_fallbacks:
-        print("  Preferred:   none — using fallback")
+        logger.info("Preferred: none — using fallback")
         candidates = available_teachers
         used_fallback = True
     else:
-        print(f"  Preferred:   {candidate_info}")
+        logger.info(f"Preferred: {candidate_info}")
 
     if not candidates:
         return [], False
@@ -258,7 +259,7 @@ def _get_candidates(
         if booked_minutes < 60:
             final_candidates.append(cand)
         else:
-            print(f"  Removed:     {cand['name']} ({tid}) — 60m limit")
+            logger.info(f"Removed: {cand['name']} ({tid}) — 60m limit")
 
     if not final_candidates:
         return [], False
@@ -281,8 +282,8 @@ def _get_candidates(
         if prev_cand:
             final_candidates.remove(prev_cand)
             final_candidates.insert(0, prev_cand)
-            print(
-                f"  Prioritised: {prev_cand['name']} ({prev_teacher}) (adjacent slot)"
+            logger.info(
+                f"Prioritised: {prev_cand['name']} ({prev_teacher}) (adjacent slot)"
             )
 
     return final_candidates, used_fallback
@@ -297,7 +298,7 @@ def _wait_for_window(booking_open_dt, now_local, local_tz, client):
     if wait_seconds <= 0:
         return
 
-    print(f"  Waiting...   window opens {booking_open_dt.strftime('%H:%M:%S')}")
+    logger.info(f"Waiting... window opens {booking_open_dt.strftime('%H:%M:%S')}")
     try:
         while wait_seconds > 0.1:
             hours, remainder = divmod(int(wait_seconds), 3600)
@@ -315,7 +316,7 @@ def _wait_for_window(booking_open_dt, now_local, local_tz, client):
 
     if wait_seconds > 0:
         time.sleep(wait_seconds + 0.1)
-    print("\n  Window open! Booking...")
+    logger.info("Window open! Booking...")
 
 
 def _refresh_schedule_token(
@@ -353,14 +354,14 @@ def _attempt_booking(
         tname = cand["name"]
 
         if force_soft:
-            print(f"  [DRY RUN]    {tname} ({tid}) for {target_slot_iso}")
+            logger.info(f"[DRY RUN] {tname} ({tid}) for {target_slot_iso}")
             return True
 
         delay = random.uniform(BOOKING_DELAY_MIN_SECONDS, BOOKING_DELAY_MAX_SECONDS)
-        print(f"  Pre-booking delay: {delay:.1f}s")
+        logger.info(f"Pre-booking delay: {delay:.1f}s")
         time.sleep(delay)
 
-        print(f"  Attempting:  {tname} ({tid})")
+        logger.info(f"Attempting: {tname} ({tid})")
 
         for attempt in range(max_retries):
             res = book_lesson(client, tid, target_slot_iso)
@@ -370,12 +371,12 @@ def _attempt_booking(
                 "Unauthorized" in str(res.get("message"))
                 or "401" in str(res.get("message"))
             ):
-                print("  Re-auth:     token rejected, refreshing...")
+                logger.info("Re-auth: token rejected, refreshing...")
                 _refresh_schedule_token(client, credentials, cache_file)
                 res = book_lesson(client, tid, target_slot_iso)
 
             if res.get("status") == "success":
-                print(f"  BOOKED:      {tname} ({tid})")
+                logger.info(f"BOOKED: {tname} ({tid})")
                 msg = f"Booked {tname} for {target_date_str} at {target_start_time_str}"
                 if used_fallback:
                     msg += " (fallback — preferred teachers unavailable)"
@@ -390,17 +391,8 @@ def _attempt_booking(
                 )
                 return True
 
-            error_msg = str(res.get("message", ""))
-            # Spanish API error: booking window not yet open
-            if "excede el" in error_msg and "agendamiento" in error_msg:
-                if attempt < max_retries - 1:
-                    print(
-                        f"  Retry {attempt + 1}/{max_retries}: window not open yet, waiting 2s..."
-                    )
-                    time.sleep(2)
-                    continue
-
-            print(f"  Failed:      {tname} ({tid}): {error_msg}")
+            error_msg = str(res.get("message", "unknown error"))
+            logger.error(f"Failed: {tname} ({tid}): {error_msg}")
             break  # Move to next candidate
 
     return False
@@ -419,20 +411,18 @@ def _run_schedule(
     force_soft: bool,
 ):
     """Runs the booking process for one schedule file end-to-end."""
-    print()
-    prefix = f"[{schedule_name}]"
+    logger.set_schedule(schedule_name)
     actual_force = force or force_soft
 
     try:
         validate_rules_against_cache(rules_data, cache)
     except ValueError as e:
-        print(f"{prefix} Schedule error: {e}")
+        logger.error(f"Schedule error: {e}", schedule=schedule_name)
         send_push(f"[{schedule_name}] Schedule validation failed: {e}", priority=1)
         return
 
     local_tz = pytz.timezone(rules_data.timezone)
     now_local = dt.now(timezone.utc).astimezone(local_tz)
-    timestamp = now_local.strftime("%Y-%m-%d %H:%M:%S")
 
     # Phase 1: local clock only — no API calls
     due_rules, rule_lesson_times, rule_open_times, all_upcoming = _evaluate_rules(
@@ -455,19 +445,22 @@ def _run_schedule(
             total_seconds = int(time_until.total_seconds())
             hours, remainder = divmod(total_seconds, 3600)
             minutes, seconds = divmod(remainder, 60)
-            print(f"{prefix} [{timestamp}] Nothing to book")
-            print(
-                f"  Next window: {next_open_dt.strftime('%Y-%m-%d %H:%M')} (in {hours}h {minutes}m {seconds}s)"
-            )
-            print(
-                f"  For class:   {next_lesson_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})"
+            logger.info(
+                "Nothing to book",
+                schedule=schedule_name,
+                next_window=next_open_dt.strftime("%Y-%m-%d %H:%M"),
+                for_class=next_lesson_dt.strftime("%Y-%m-%d %H:%M"),
             )
         else:
-            print(f"{prefix} [{timestamp}] Nothing to book — no upcoming rules found.")
+            logger.info(
+                "Nothing to book — no upcoming rules found.", schedule=schedule_name
+            )
         return
 
     # Phase 2: something is due — authenticate and sync time
-    print(f"{prefix} [{timestamp}] Booking due — processing {len(due_rules)} rule(s)")
+    logger.info(
+        f"Booking due — processing {len(due_rules)} rule(s)", schedule=schedule_name
+    )
 
     cache_file = CACHE_DIR / f".token_cache_{schedule_name}.json"
     credentials = {
@@ -479,9 +472,7 @@ def _run_schedule(
     try:
         token = login(client, credentials, cache_file)
         if not token:
-            print(
-                f"{prefix}   Auth:   FAILED — check credentials in scheduling_rules/{schedule_name}.yml"
-            )
+            logger.error("Auth: FAILED — check credentials", schedule=schedule_name)
             send_push(
                 f"[{schedule_name}] Authentication failed — check credentials in YAML",
                 priority=1,
@@ -492,8 +483,9 @@ def _run_schedule(
         now_utc, drift = get_synced_now(client)
         now_local = now_utc.astimezone(local_tz)
         drift_icon = "✓" if abs(drift) < 5 else "✗"
-        print(
-            f"{prefix}   Auth:   {rules_data.credentials.email} ✓  (drift: {drift:+.3f}s {drift_icon})"
+        logger.info(
+            f"Auth: {rules_data.credentials.email} {drift_icon} (drift: {drift:+.3f}s)",
+            schedule=schedule_name,
         )
 
         # Re-evaluate with synced time for accurate wait calculations
@@ -510,8 +502,9 @@ def _run_schedule(
         )
 
         forced_label = " (forced)" if actual_force else ""
-        print(
-            f"{prefix}   Rules:  {', '.join([slot_key for _, slot_key in due_rules])}{forced_label}"
+        logger.info(
+            f"Rules: {', '.join([slot_key for _, slot_key in due_rules])}{forced_label}",
+            schedule=schedule_name,
         )
 
         bookings = get_bookings(client)
@@ -526,27 +519,32 @@ def _run_schedule(
             target_date_str = target_dt.strftime("%Y-%m-%d")
             target_start_time_str = target_dt.strftime("%H:%M:00")
 
-            print(
-                f"\n{prefix}   [{slot_key}] {target_date_str} {target_start_time_str} ({rules_data.timezone})"
+            logger.info(
+                f"[{slot_key}] {target_date_str} {target_start_time_str}",
+                schedule=schedule_name,
             )
 
             if _is_already_booked(
                 approved_bookings, target_date_str, target_start_time_str
             ):
-                print(f"{prefix}   [{slot_key}] Already booked — skipping")
+                logger.info(
+                    f"[{slot_key}] Already booked — skipping", schedule=schedule_name
+                )
                 continue
 
             available_teachers = get_available_teachers(client, target_slot_iso)
             available_info = ", ".join(
                 [f"{t['name']} ({t['id']})" for t in available_teachers]
             )
-            print(f"{prefix}   Available:   {available_info}")
+            logger.info(f"Available: {available_info}", schedule=schedule_name)
 
             candidates, used_fallback = _get_candidates(
                 rule, available_teachers, approved_bookings, target_date_str, target_dt
             )
             if not candidates:
-                print(f"{prefix}   No suitable teachers available — skipping")
+                logger.info(
+                    "No suitable teachers available — skipping", schedule=schedule_name
+                )
                 send_push(
                     f"[{schedule_name}] No teachers available for {slot_key} on {target_date_str} at {target_start_time_str}",
                     priority=1,
@@ -556,7 +554,7 @@ def _run_schedule(
             candidate_order = ", ".join(
                 [f"{c['name']} ({c['id']})" for c in candidates]
             )
-            print(f"{prefix}   Candidates:  {candidate_order}")
+            logger.info(f"Candidates: {candidate_order}", schedule=schedule_name)
 
             _wait_for_window(booking_open_dt, now_local, local_tz, client)
 
@@ -564,11 +562,15 @@ def _run_schedule(
                 client.client.headers.get("Authorization", "").replace("Bearer ", ""),
                 buffer_seconds=60,
             ):
-                print(f"{prefix}   Re-auth:     token near-expiry, refreshing...")
+                logger.info(
+                    "Re-auth: token near-expiry, refreshing...", schedule=schedule_name
+                )
                 if _refresh_schedule_token(client, credentials, cache_file):
-                    print(f"{prefix}   Re-auth:     success")
+                    logger.info("Re-auth: success", schedule=schedule_name)
                 else:
-                    print(f"{prefix}   Re-auth:     FAILED — booking may fail")
+                    logger.error(
+                        "Re-auth: FAILED — booking may fail", schedule=schedule_name
+                    )
                     send_push(
                         f"[{schedule_name}] Token refresh failed before booking {slot_key} — booking may fail",
                         priority=1,
@@ -588,13 +590,16 @@ def _run_schedule(
                 slot_key=slot_key,
             )
             if not success:
-                print(f"{prefix}   FAILED:      all teachers exhausted for {slot_key}")
+                logger.error(
+                    f"FAILED: all teachers exhausted for {slot_key}",
+                    schedule=schedule_name,
+                )
                 send_push(
                     f"[{schedule_name}] Could not book {slot_key} on {target_date_str} at {target_start_time_str} — all teachers failed",
                     priority=1,
                 )
 
-        print(f"\n{prefix} Booking process completed.")
+        logger.info("Booking process completed.", schedule=schedule_name)
 
     finally:
         client.close()
@@ -606,20 +611,22 @@ def _run_schedule(
 
 
 def run_due_process(force: bool = False, force_soft: bool = False):
+    run_id = dt.now().strftime("%y%m%d%H%M%S")
+    logger.set_run_id(run_id)
     lock_f = acquire_lock()
     if not lock_f:
-        print("Another instance is already running. Exiting.")
+        logger.warning("Another instance is already running. Exiting.")
         return
 
     try:
         cache = load_teacher_cache()
         if not cache:
-            print("  No teachers cache — run: python main.py populate-teachers")
+            logger.error("No teachers cache — run: python main.py populate-teachers")
             return
 
         schedules = load_active_schedules()
         if not schedules:
-            print("  No active schedules found in scheduling_rules/")
+            logger.warning("No active schedules found in scheduling_rules/")
             return
 
         for schedule_name, rules_data in schedules:
@@ -627,4 +634,3 @@ def run_due_process(force: bool = False, force_soft: bool = False):
 
     finally:
         release_lock(lock_f)
-        print()

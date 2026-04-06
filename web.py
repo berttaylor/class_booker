@@ -6,6 +6,7 @@ Then open http://localhost:5001/schedules/bert in your browser.
 
 import re
 from flask import Flask, abort, request, jsonify, render_template_string
+import json
 from pathlib import Path
 import yaml
 
@@ -246,22 +247,56 @@ LOGS_PAGE = """
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ name }}</title>
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css">
+  <script src="https://code.jquery.com/jquery-3.7.0.js"></script>
+  <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #eee; height: 100vh; display: flex; flex-direction: column; }
-    header { padding: 16px 24px; background: #16213e; border-bottom: 1px solid #0f3460; display: flex; align-items: center; gap: 16px; }
-    header h1 { font-size: 18px; font-weight: 600; }
-    header { padding: 12px 16px; background: #16213e; border-bottom: 1px solid #0f3460; }
-    header h1 { font-size: 16px; font-weight: 600; margin-bottom: 10px; }
-    .toolbar { display: flex; align-items: center; gap: 8px; }
+    header { padding: 12px 16px; background: #16213e; border-bottom: 1px solid #0f3460; display: flex; align-items: center; gap: 16px; }
+    header h1 { font-size: 16px; font-weight: 600; }
+    .toolbar { display: flex; align-items: center; gap: 10px; flex: 1; }
+    .toolbar-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
     a.home { padding: 8px 14px; background: #0f3460; border: 1px solid #1a5a8a; color: #eee; border-radius: 6px; font-size: 14px; text-decoration: none; white-space: nowrap; }
     a.home:hover { background: #1a5a8a; }
-    .font-btns { display: flex; border: 1px solid #1a5a8a; border-radius: 6px; overflow: hidden; margin-left: auto; }
-    .font-btn { padding: 6px 12px; background: #0f3460; border: none; color: #eee; cursor: pointer; font-size: 16px; line-height: 1; }
-    .font-btn:hover { background: #1a5a8a; }
-    .font-btn + .font-btn { border-left: 1px solid #1a5a8a; }
-    #log-wrap { flex: 1; overflow: auto; padding: 16px 24px; }
-    pre { font-family: monospace; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; color: #ccc; }
+    
+    .toolbar select, .toolbar input {
+        background: #0f3460;
+        border: 1px solid #1a5a8a;
+        color: #eee;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        outline: none;
+        width: 140px;
+    }
+    .toolbar input::placeholder { color: #666; }
+    
+    #log-wrap { flex: 1; overflow: auto; padding: 20px; background: #1a1a2e; }
+    
+    /* DataTable Dark Theme Overrides */
+    .dataTables_wrapper { color: #eee !important; font-size: 13px; }
+    table.dataTable { background-color: #16213e !important; color: #eee !important; border-bottom: none !important; margin-top: 15px !important; }
+    table.dataTable thead th { background-color: #0f3460 !important; color: #aaa !important; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; padding: 12px 10px !important; border-bottom: 1px solid #1a5a8a !important; }
+    table.dataTable tbody tr { background-color: #16213e !important; }
+    table.dataTable tbody tr:hover { background-color: #1a5a8a !important; }
+    table.dataTable tbody td { padding: 10px !important; border-bottom: 1px solid #0f3460 !important; line-height: 1.4; vertical-align: top; }
+    
+    .dataTables_filter input { background: #0f3460 !important; border: 1px solid #1a5a8a !important; color: #eee !important; padding: 6px 12px !important; border-radius: 6px !important; outline: none; }
+    .dataTables_length select { background: #0f3460 !important; border: 1px solid #1a5a8a !important; color: #eee !important; padding: 4px !important; border-radius: 4px !important; }
+    .dataTables_info { padding-top: 15px !important; color: #666 !important; }
+    .dataTables_paginate { padding-top: 15px !important; }
+    .paginate_button { color: #aaa !important; }
+    .paginate_button.current { background: #1a5a8a !important; border: 1px solid #1a5a8a !important; color: white !important; }
+    
+    .lvl-ERROR { color: #f87171; font-weight: 600; }
+    .lvl-WARNING { color: #fbbf24; font-weight: 600; }
+    .lvl-INFO { color: #4caf82; }
+    
+    .timestamp { white-space: nowrap; color: #888; font-family: monospace; }
+    .schedule-tag { background: #1a4731; color: #4caf82; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .run-id-tag { background: #0f3460; color: #1a5a8a; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .msg-cell { word-break: break-all; }
   </style>
 </head>
 <body>
@@ -269,21 +304,87 @@ LOGS_PAGE = """
     <h1>{{ name | capitalize }}</h1>
     <div class="toolbar">
       <a class="home" href="/">&#8592; Home</a>
-      <div class="font-btns">
-        <button class="font-btn" onclick="adjustFont(-1)">&#8722;</button>
-        <button class="font-btn" onclick="adjustFont(1)">&#43;</button>
+      <div class="toolbar-right">
+        <select id="level-filter">
+          <option value="">All Levels</option>
+        </select>
+        <select id="schedule-filter">
+          <option value="">All Schedules</option>
+        </select>
+        <input id="run-id-filter" type="text" placeholder="Filter Run ID..." list="run-ids">
+        <datalist id="run-ids"></datalist>
       </div>
     </div>
   </header>
   <div id="log-wrap">
-    <pre id="log">{{ content }}</pre>
+    <table id="log-table" class="display" style="width:100%">
+        <thead>
+            <tr>
+                <th width="160">Timestamp</th>
+                <th width="80">Level</th>
+                <th width="100">Run ID</th>
+                <th width="100">Schedule</th>
+                <th>Message</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in logs %}
+            <tr>
+                <td class="timestamp">{{ log.timestamp }}</td>
+                <td class="lvl-{{ log.level }}">{{ log.level }}</td>
+                <td>{% if log.run_id %}<span class="run-id-tag">{{ log.run_id }}</span>{% endif %}</td>
+                <td>{% if log.schedule %}<span class="schedule-tag">{{ log.schedule }}</span>{% endif %}</td>
+                <td class="msg-cell">{{ log.message }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
   </div>
   <script>
-    let fontSize = 13;
-    function adjustFont(delta) {
-      fontSize = Math.max(8, Math.min(32, fontSize + delta));
-      document.getElementById('log').style.fontSize = fontSize + 'px';
-    }
+    $(document).ready(function() {
+        var table = $('#log-table').DataTable({
+            order: [[0, 'desc']],
+            pageLength: 50,
+            language: {
+                search: "_INPUT_",
+                searchPlaceholder: "Filter logs..."
+            }
+        });
+
+        // Fill filters
+        function populateFilters() {
+            var levels = [];
+            var schedules = [];
+            var runIds = [];
+
+            table.rows().nodes().to$().each(function() {
+                var level = $(this).find('td:eq(1)').text().trim();
+                var runId = $(this).find('td:eq(2)').text().trim();
+                var schedule = $(this).find('td:eq(3)').text().trim();
+
+                if (level && levels.indexOf(level) === -1) levels.push(level);
+                if (runId && runIds.indexOf(runId) === -1) runIds.push(runId);
+                if (schedule && schedules.indexOf(schedule) === -1) schedules.push(schedule);
+            });
+
+            levels.sort().forEach(l => $('#level-filter').append('<option value="' + l + '">' + l + '</option>'));
+            schedules.sort().forEach(s => $('#schedule-filter').append('<option value="' + s + '">' + s + '</option>'));
+            runIds.sort().reverse().forEach(r => $('#run-ids').append('<option value="' + r + '">'));
+        }
+
+        populateFilters();
+
+        $('#level-filter, #schedule-filter').on('change', function() {
+            var colIdx = this.id === 'level-filter' ? 1 : 3;
+            var val = $(this).val();
+            table.column(colIdx).search(val ? '^' + val + '$' : '', true, false).draw();
+        });
+
+        $('#run-id-filter').on('input change', function() {
+            var val = $(this).val();
+            table.column(2).search(val ? '^' + val + '$' : '', true, false).draw();
+        });
+    });
   </script>
 </body>
 </html>
@@ -304,7 +405,13 @@ def api_teachers():
 @app.route("/")
 def index():
     schedules = sorted(p.stem for p in (BASE_DIR / "scheduling_rules").glob("*.yml"))
-    logs = sorted(p.stem for p in (BASE_DIR / "logs").glob("*.log"))
+
+    # We look for all .log and .json files in logs/
+    logs_files = list((BASE_DIR / "logs").glob("*.log")) + list(
+        (BASE_DIR / "logs").glob("*.json")
+    )
+    logs = sorted(list(set(p.stem for p in logs_files)))
+
     return render_template_string(INDEX_PAGE, schedules=schedules, logs=logs)
 
 
@@ -369,12 +476,33 @@ def save(name: str):
 @app.route("/logs/<name>")
 def view_log(name: str):
     _validate_name(name)
-    path = BASE_DIR / "logs" / f"{name}.log"
-    if not path.exists():
+
+    # Prefer .json file if it exists, otherwise use .log
+    json_path = BASE_DIR / "logs" / f"{name}.json"
+    log_path = BASE_DIR / "logs" / f"{name}.log"
+
+    if json_path.exists():
+        content = json_path.read_text()
+        try:
+            logs = json.loads(content)
+        except Exception:
+            logs = [
+                {
+                    "timestamp": "-",
+                    "level": "INFO",
+                    "message": "Malformed JSON log file",
+                }
+            ]
+    elif log_path.exists():
+        content = log_path.read_text()
+        logs = [
+            {"timestamp": "-", "level": "INFO", "message": line}
+            for line in content.splitlines()
+        ]
+    else:
         abort(404)
-    lines = path.read_text().splitlines()
-    content = "\n".join(lines[-500:])
-    return render_template_string(LOGS_PAGE, name=name, content=content)
+
+    return render_template_string(LOGS_PAGE, name=name, logs=logs[-1000:])
 
 
 def _friendly_error(raw: str) -> str:
