@@ -57,7 +57,7 @@ web.py               — Flask schedule editor (browser UI with validation)
 - `scheduling_rules/*.yml` — one file per user/schedule, each containing:
   - `credentials` — per-account email/password used for booking (supports multiple accounts in parallel)
   - `settings.is_active` — whether this schedule is currently active
-  - `timezone`, `booking`, `rules` — booking config and rules as before
+  - `timezone`, `rules` — timezone and booking rules
   - Edit directly or via `python web.py`
 
 **Scheduled jobs** (two independent launchd jobs, all managed by `setup.sh`):

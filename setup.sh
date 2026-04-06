@@ -35,11 +35,6 @@ credentials:
   email: YOUR_EMAIL
   password: YOUR_PASSWORD
 
-booking:
-  open_offset_days: 7
-  open_offset_minutes: 30
-  precheck_lead_seconds: 120
-
 rules:
   # MONDAY
   - label: midday

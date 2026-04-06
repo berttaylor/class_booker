@@ -48,11 +48,6 @@ credentials:
   email: user@example.com
   password: yourpassword  # per-account credentials used for booking
 
-booking:
-  open_offset_days: 7
-  open_offset_minutes: 30
-  precheck_lead_seconds: 120
-
 rules:
   # MONDAY
   - label: midday

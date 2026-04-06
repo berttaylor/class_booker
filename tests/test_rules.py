@@ -20,11 +20,6 @@ credentials:
   email: test@example.com
   password: secret
 
-booking:
-  open_offset_days: 7
-  open_offset_minutes: 30
-  precheck_lead_seconds: 120
-
 rules:
   - label: midday
     weekday: mon
@@ -60,12 +55,6 @@ class TestLoadSchedulingRules:
     def test_timezone(self, tmp_path):
         rules = load_scheduling_rules(str(self._fixture_file(tmp_path)))
         assert rules.timezone == "Europe/Madrid"
-
-    def test_booking_config(self, tmp_path):
-        rules = load_scheduling_rules(str(self._fixture_file(tmp_path)))
-        assert rules.booking.open_offset_days == 7
-        assert rules.booking.open_offset_minutes == 30
-        assert rules.booking.precheck_lead_seconds == 120
 
     def test_rule_count(self, tmp_path):
         rules = load_scheduling_rules(str(self._fixture_file(tmp_path)))
@@ -104,18 +93,7 @@ class TestLoadSchedulingRules:
 
     def test_missing_required_field_raises(self, tmp_path):
         bad_file = tmp_path / "missing_field.yml"
-        bad_file.write_text(
-            yaml.dump(
-                {
-                    "timezone": "Europe/Madrid",
-                    "booking": {
-                        "open_offset_days": 7,
-                        "open_offset_minutes": 30,
-                        "precheck_lead_seconds": 120,
-                    },
-                }
-            )
-        )
+        bad_file.write_text(yaml.dump({"rules": []}))  # missing timezone
         with pytest.raises(Exception):
             load_scheduling_rules(str(bad_file))
 
@@ -239,15 +217,8 @@ class TestBookingRuleValidation:
 
     def test_invalid_timezone_raises(self):
         with pytest.raises(Exception, match="timezone"):
-            from app.rules import SchedulingRules, BookingConfig
-
             SchedulingRules(
                 timezone="Not/ATimezone",
-                booking=BookingConfig(
-                    open_offset_days=7,
-                    open_offset_minutes=30,
-                    precheck_lead_seconds=120,
-                ),
                 rules=[],
             )
 
@@ -262,25 +233,12 @@ class TestScheduleSettings:
         assert s.is_active is False
 
     def test_scheduling_rules_defaults_settings(self):
-        from app.rules import BookingConfig
-
-        rules = SchedulingRules(
-            timezone="Europe/Madrid",
-            booking=BookingConfig(
-                open_offset_days=7, open_offset_minutes=30, precheck_lead_seconds=120
-            ),
-            rules=[],
-        )
+        rules = SchedulingRules(timezone="Europe/Madrid", rules=[])
         assert rules.settings.is_active is True
 
     def test_scheduling_rules_respects_is_active_false(self):
-        from app.rules import BookingConfig
-
         rules = SchedulingRules(
             timezone="Europe/Madrid",
-            booking=BookingConfig(
-                open_offset_days=7, open_offset_minutes=30, precheck_lead_seconds=120
-            ),
             settings=ScheduleSettings(is_active=False),
             rules=[],
         )
@@ -294,22 +252,13 @@ class TestScheduleCredentials:
         assert c.password == "secret"
 
     def test_credentials_none_by_default(self):
-        from app.rules import BookingConfig
-
-        rules = SchedulingRules(
-            timezone="Europe/Madrid",
-            booking=BookingConfig(
-                open_offset_days=7, open_offset_minutes=30, precheck_lead_seconds=120
-            ),
-            rules=[],
-        )
+        rules = SchedulingRules(timezone="Europe/Madrid", rules=[])
         assert rules.credentials is None
 
     def test_credentials_parsed_from_yaml(self, tmp_path):
         yml = tmp_path / "test.yml"
         yml.write_text(
             "timezone: Europe/Madrid\n"
-            "booking:\n  open_offset_days: 7\n  open_offset_minutes: 30\n  precheck_lead_seconds: 120\n"
             "credentials:\n  email: a@b.com\n  password: pw\n"
             "rules: []\n"
         )
@@ -330,7 +279,6 @@ class TestLoadActiveSchedules:
             f"timezone: Europe/Madrid\n"
             f"settings:\n  is_active: {active_str}\n"
             f"{creds}"
-            f"booking:\n  open_offset_days: 7\n  open_offset_minutes: 30\n  precheck_lead_seconds: 120\n"
             f"rules: []\n"
         )
 

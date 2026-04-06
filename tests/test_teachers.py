@@ -8,17 +8,17 @@ from app.teachers import (
     populate_teachers,
     validate_rules_against_cache,
 )
-from app.rules import BookingRule, BookingConfig, SchedulingRules
+from app.rules import BookingRule, SchedulingRules
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def make_rules_data(names: list[str], allow_fallbacks: bool = True) -> SchedulingRules:
     return SchedulingRules(
         timezone="Europe/Madrid",
-        booking=BookingConfig(open_offset_days=7, open_offset_minutes=30, precheck_lead_seconds=120),
         rules=[
             BookingRule(
                 label="midday",
@@ -38,8 +38,7 @@ def make_cache(*teachers: tuple) -> dict:
     return {
         "updated": "2026-04-03",
         "teachers": {
-            name: {"id": tid, "status": status}
-            for name, tid, status in teachers
+            name: {"id": tid, "status": status} for name, tid, status in teachers
         },
     }
 
@@ -47,6 +46,7 @@ def make_cache(*teachers: tuple) -> dict:
 # ---------------------------------------------------------------------------
 # load / save
 # ---------------------------------------------------------------------------
+
 
 class TestLoadTeacherCache:
     def test_returns_empty_dict_if_missing(self, tmp_path, monkeypatch):
@@ -65,6 +65,7 @@ class TestSaveTeacherCache:
     def test_writes_file_with_today_date(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         from freezegun import freeze_time
+
         with freeze_time("2026-04-03"):
             save_teacher_cache({"teachers": {}})
         result = json.loads((tmp_path / "data" / "teachers.json").read_text())
@@ -75,6 +76,7 @@ class TestSaveTeacherCache:
 # populate_teachers
 # ---------------------------------------------------------------------------
 
+
 class TestPopulateTeachers:
     def _run(self, tmp_path, monkeypatch, tutor_map, existing_cache=None):
         monkeypatch.chdir(tmp_path)
@@ -83,6 +85,7 @@ class TestPopulateTeachers:
             (tmp_path / "data" / "teachers.json").write_text(json.dumps(existing_cache))
 
         from app.client import BookingClient
+
         client = BookingClient(base_url="http://localhost:9999")
 
         with patch("app.teachers.get_tutors_map", return_value=tutor_map):
@@ -128,10 +131,10 @@ class TestPopulateTeachers:
         assert result["teachers"]["Carlos Lopez"]["status"] == "ACTIVE"
 
 
-
 # ---------------------------------------------------------------------------
 # validate_rules_against_cache
 # ---------------------------------------------------------------------------
+
 
 class TestValidateRulesAgainstCache:
     def test_all_active_ok(self):
@@ -158,11 +161,13 @@ class TestValidateRulesAgainstCache:
         cache = make_cache(("Maria Garcia", 184, "ACTIVE"))
         rules = SchedulingRules(
             timezone="Europe/Madrid",
-            booking=BookingConfig(open_offset_days=7, open_offset_minutes=30, precheck_lead_seconds=120),
             rules=[
                 BookingRule(
-                    label="midday", enabled=False, weekday="wed",
-                    start_time="13:00", slots=1,
+                    label="midday",
+                    enabled=False,
+                    weekday="wed",
+                    start_time="13:00",
+                    slots=1,
                     preferred_teachers=["Unknown Teacher"],
                     allow_fallbacks=True,
                 )

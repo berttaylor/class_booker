@@ -14,7 +14,13 @@ from app.api.availability import get_available_teachers
 from app.api.booking import get_bookings, book_lesson
 from app.client import BookingClient
 from app.config import app_config
-from app.rules import load_active_schedules, SchedulingRules
+from app.rules import (
+    load_active_schedules,
+    SchedulingRules,
+    BOOKING_OPEN_OFFSET_DAYS,
+    BOOKING_OPEN_OFFSET_MINUTES,
+    BOOKING_PRECHECK_LEAD_SECONDS,
+)
 from app.services.session import ensure_fresh_token
 from app.teachers import load_teacher_cache, validate_rules_against_cache
 from app.utils import get_server_time
@@ -30,6 +36,7 @@ BOOKING_DELAY_MAX_SECONDS = 30
 # ---------------------------------------------------------------------------
 # Lock management
 # ---------------------------------------------------------------------------
+
 
 def acquire_lock():
     f = open(LOCK_FILE, "w")
@@ -54,6 +61,7 @@ def release_lock(f):
 # Server time sync
 # ---------------------------------------------------------------------------
 
+
 def get_synced_now(client: BookingClient) -> tuple[dt, float]:
     """
     Fetches server time and calculates current UTC synced with the server.
@@ -70,7 +78,9 @@ def get_synced_now(client: BookingClient) -> tuple[dt, float]:
     drift = 0.0
     if "datetime" in server_res:
         try:
-            server_dt_raw = dt.fromisoformat(server_res["datetime"].replace(' ', 'T')).replace(tzinfo=timezone.utc)
+            server_dt_raw = dt.fromisoformat(
+                server_res["datetime"].replace(" ", "T")
+            ).replace(tzinfo=timezone.utc)
             server_dt_synced = server_dt_raw + timedelta(seconds=half_rtt)
             drift = (server_dt_synced - local_after).total_seconds()
             return server_dt_synced, drift
@@ -82,6 +92,7 @@ def get_synced_now(client: BookingClient) -> tuple[dt, float]:
 # ---------------------------------------------------------------------------
 # run_due_process helpers
 # ---------------------------------------------------------------------------
+
 
 def _evaluate_rules(rules_data, now_local):
     """
@@ -112,20 +123,24 @@ def _evaluate_rules(rules_data, now_local):
                 lesson_dt = local_tz.localize(dt.combine(target_date, lesson_time))
 
                 booking_open_dt = lesson_dt - timedelta(
-                    days=rules_data.booking.open_offset_days,
-                    minutes=rules_data.booking.open_offset_minutes,
+                    days=BOOKING_OPEN_OFFSET_DAYS,
+                    minutes=BOOKING_OPEN_OFFSET_MINUTES,
                 )
-                booking_open_dt = local_tz.localize(booking_open_dt.replace(tzinfo=None))
+                booking_open_dt = local_tz.localize(
+                    booking_open_dt.replace(tzinfo=None)
+                )
 
                 if booking_open_dt < now_local:
                     continue
 
                 found_occurrence = True
-                slot_key = f"{rule.id}_slot{slot_index + 1}" if rule.slots > 1 else rule.id
+                slot_key = (
+                    f"{rule.id}_slot{slot_index + 1}" if rule.slots > 1 else rule.id
+                )
                 all_upcoming_rules.append((booking_open_dt, rule, lesson_dt))
 
                 diff = (booking_open_dt - now_local).total_seconds()
-                if 0 <= diff <= rules_data.booking.precheck_lead_seconds:
+                if 0 <= diff <= BOOKING_PRECHECK_LEAD_SECONDS:
                     due_rules.append((rule, slot_key))
                     rule_lesson_times[slot_key] = lesson_dt.isoformat()
                     rule_open_times[slot_key] = booking_open_dt
@@ -136,7 +151,14 @@ def _evaluate_rules(rules_data, now_local):
     return due_rules, rule_lesson_times, rule_open_times, all_upcoming_rules
 
 
-def _apply_force_flag(actual_force, force_soft, due_rules, all_upcoming_rules, rule_lesson_times, rule_open_times):
+def _apply_force_flag(
+    actual_force,
+    force_soft,
+    due_rules,
+    all_upcoming_rules,
+    rule_lesson_times,
+    rule_open_times,
+):
     """
     When --force or --force-soft is active and no rules are due, injects the
     next upcoming rule into due_rules so it runs immediately.
@@ -159,12 +181,18 @@ def _print_verbose_upcoming(all_upcoming_rules, now_local, rules_data):
 
     hours, remainder = divmod(int(time_until.total_seconds()), 3600)
     minutes, seconds = divmod(remainder, 60)
-    time_str = f"{hours}h {minutes}m {seconds}s" if hours > 0 else f"{minutes}m {seconds}s"
+    time_str = (
+        f"{hours}h {minutes}m {seconds}s" if hours > 0 else f"{minutes}m {seconds}s"
+    )
 
     print("--- UPCOMING RULE INFO ---")
     print(f"Next rule: {next_rule.id}")
-    print(f"Lesson time: {next_lesson_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})")
-    print(f"Booking opens at: {next_open_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})")
+    print(
+        f"Lesson time: {next_lesson_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})"
+    )
+    print(
+        f"Booking opens at: {next_open_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})"
+    )
     print(f"Time until booking opens: {time_str}")
     print("--------------------------")
 
@@ -177,7 +205,9 @@ def _is_already_booked(approved_bookings, date_str, start_time_str) -> bool:
     )
 
 
-def _get_candidates(rule, available_teachers, approved_bookings, target_date_str, target_dt):
+def _get_candidates(
+    rule, available_teachers, approved_bookings, target_date_str, target_dt
+):
     """
     Builds a priority-sorted candidate list for one rule:
       1. Intersect rule.teacher_ids with available teachers
@@ -222,7 +252,8 @@ def _get_candidates(rule, available_teachers, approved_bookings, target_date_str
     for cand in candidates:
         tid = str(cand["id"])
         booked_minutes = sum(
-            30 for b in approved_bookings
+            30
+            for b in approved_bookings
             if str(b.get("staff_id")) == tid and b.get("date") == target_date_str
         )
         if booked_minutes < 60:
@@ -236,16 +267,24 @@ def _get_candidates(rule, available_teachers, approved_bookings, target_date_str
     # Adjacency priority — promote teacher who taught the preceding 30-min slot
     prev_slot_start = (target_dt - timedelta(minutes=30)).strftime("%H:%M:00")
     prev_teacher = next(
-        (str(b.get("staff_id")) for b in approved_bookings
-         if b.get("date") == target_date_str and b.get("start_time") == prev_slot_start),
-        None
+        (
+            str(b.get("staff_id"))
+            for b in approved_bookings
+            if b.get("date") == target_date_str
+            and b.get("start_time") == prev_slot_start
+        ),
+        None,
     )
     if prev_teacher:
-        prev_cand = next((c for c in final_candidates if str(c["id"]) == prev_teacher), None)
+        prev_cand = next(
+            (c for c in final_candidates if str(c["id"]) == prev_teacher), None
+        )
         if prev_cand:
             final_candidates.remove(prev_cand)
             final_candidates.insert(0, prev_cand)
-            print(f"  Prioritised: {prev_cand['name']} ({prev_teacher}) (adjacent slot)")
+            print(
+                f"  Prioritised: {prev_cand['name']} ({prev_teacher}) (adjacent slot)"
+            )
 
     return final_candidates, used_fallback
 
@@ -280,7 +319,17 @@ def _wait_for_window(booking_open_dt, now_local, local_tz, client):
     print("\n  Window open! Booking...")
 
 
-def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_bookings, target_date_str, target_start_time_str, used_fallback=False, slot_key="") -> bool:
+def _attempt_booking(
+    client,
+    candidates,
+    target_slot_iso,
+    force_soft,
+    approved_bookings,
+    target_date_str,
+    target_start_time_str,
+    used_fallback=False,
+    slot_key="",
+) -> bool:
     """
     Iterates candidates and attempts to book the lesson.
     Returns True on first success. Mutates approved_bookings on success.
@@ -306,7 +355,8 @@ def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_b
 
             # Auth error — refresh token and retry once
             if res.get("status") == "error" and (
-                "Unauthorized" in str(res.get("message")) or "401" in str(res.get("message"))
+                "Unauthorized" in str(res.get("message"))
+                or "401" in str(res.get("message"))
             ):
                 print("  Re-auth:     token rejected, refreshing...")
                 ensure_fresh_token(client)
@@ -318,19 +368,23 @@ def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_b
                 if used_fallback:
                     msg += " (fallback — preferred teachers unavailable)"
                 send_push(msg, priority=-1)
-                approved_bookings.append({
-                    "staff_id": tid,
-                    "date": target_date_str,
-                    "start_time": target_start_time_str,
-                    "status": "approved",
-                })
+                approved_bookings.append(
+                    {
+                        "staff_id": tid,
+                        "date": target_date_str,
+                        "start_time": target_start_time_str,
+                        "status": "approved",
+                    }
+                )
                 return True
 
             error_msg = str(res.get("message", ""))
             # Spanish API error: booking window not yet open
             if "excede el" in error_msg and "agendamiento" in error_msg:
                 if attempt < max_retries - 1:
-                    print(f"  Retry {attempt + 1}/{max_retries}: window not open yet, waiting 2s...")
+                    print(
+                        f"  Retry {attempt + 1}/{max_retries}: window not open yet, waiting 2s..."
+                    )
                     time.sleep(2)
                     continue
 
@@ -343,6 +397,7 @@ def _attempt_booking(client, candidates, target_slot_iso, force_soft, approved_b
 # ---------------------------------------------------------------------------
 # Single-schedule runner
 # ---------------------------------------------------------------------------
+
 
 def _run_schedule(
     schedule_name: str,
@@ -367,8 +422,17 @@ def _run_schedule(
     timestamp = now_local.strftime("%Y-%m-%d %H:%M:%S")
 
     # Phase 1: local clock only — no API calls
-    due_rules, rule_lesson_times, rule_open_times, all_upcoming = _evaluate_rules(rules_data, now_local)
-    _apply_force_flag(actual_force, force_soft, due_rules, all_upcoming, rule_lesson_times, rule_open_times)
+    due_rules, rule_lesson_times, rule_open_times, all_upcoming = _evaluate_rules(
+        rules_data, now_local
+    )
+    _apply_force_flag(
+        actual_force,
+        force_soft,
+        due_rules,
+        all_upcoming,
+        rule_lesson_times,
+        rule_open_times,
+    )
 
     if not due_rules:
         if all_upcoming:
@@ -379,8 +443,12 @@ def _run_schedule(
             hours, remainder = divmod(total_seconds, 3600)
             minutes, seconds = divmod(remainder, 60)
             print(f"{prefix} [{timestamp}] Nothing to book")
-            print(f"  Next window: {next_open_dt.strftime('%Y-%m-%d %H:%M')} (in {hours}h {minutes}m {seconds}s)")
-            print(f"  For class:   {next_lesson_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})")
+            print(
+                f"  Next window: {next_open_dt.strftime('%Y-%m-%d %H:%M')} (in {hours}h {minutes}m {seconds}s)"
+            )
+            print(
+                f"  For class:   {next_lesson_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})"
+            )
         else:
             print(f"{prefix} [{timestamp}] Nothing to book — no upcoming rules found.")
         return
@@ -389,33 +457,53 @@ def _run_schedule(
     print(f"{prefix} [{timestamp}] Booking due — processing {len(due_rules)} rule(s)")
 
     cache_file = CACHE_DIR / f".token_cache_{schedule_name}.json"
-    credentials = {"email": rules_data.credentials.email, "password": rules_data.credentials.password}
+    credentials = {
+        "email": rules_data.credentials.email,
+        "password": rules_data.credentials.password,
+    }
 
     client = BookingClient(base_url=app_config.base_url)
     try:
         token = login(client, credentials, cache_file)
         if not token:
-            print(f"{prefix}   Auth:   FAILED — check credentials in scheduling_rules/{schedule_name}.yml")
-            send_push(f"[{schedule_name}] Authentication failed — check credentials in YAML", priority=1)
+            print(
+                f"{prefix}   Auth:   FAILED — check credentials in scheduling_rules/{schedule_name}.yml"
+            )
+            send_push(
+                f"[{schedule_name}] Authentication failed — check credentials in YAML",
+                priority=1,
+            )
             return
         client.set_token(token)
 
         now_utc, drift = get_synced_now(client)
         now_local = now_utc.astimezone(local_tz)
         drift_icon = "✓" if abs(drift) < 5 else "✗"
-        print(f"{prefix}   Auth:   {rules_data.credentials.email} ✓  (drift: {drift:+.3f}s {drift_icon})")
+        print(
+            f"{prefix}   Auth:   {rules_data.credentials.email} ✓  (drift: {drift:+.3f}s {drift_icon})"
+        )
 
         # Re-evaluate with synced time for accurate wait calculations
-        due_rules, rule_lesson_times, rule_open_times, _ = _evaluate_rules(rules_data, now_local)
-        _apply_force_flag(actual_force, force_soft, due_rules, all_upcoming, rule_lesson_times, rule_open_times)
+        due_rules, rule_lesson_times, rule_open_times, _ = _evaluate_rules(
+            rules_data, now_local
+        )
+        _apply_force_flag(
+            actual_force,
+            force_soft,
+            due_rules,
+            all_upcoming,
+            rule_lesson_times,
+            rule_open_times,
+        )
 
         forced_label = " (forced)" if actual_force else ""
-        print(f"{prefix}   Rules:  {', '.join([slot_key for _, slot_key in due_rules])}{forced_label}")
+        print(
+            f"{prefix}   Rules:  {', '.join([slot_key for _, slot_key in due_rules])}{forced_label}"
+        )
 
         bookings = get_bookings(client)
         approved_bookings = [
-            b for b in bookings
-            if b.get("status") == "approved" and not b.get("past")
+            b for b in bookings if b.get("status") == "approved" and not b.get("past")
         ]
 
         for rule, slot_key in due_rules:
@@ -425,23 +513,36 @@ def _run_schedule(
             target_date_str = target_dt.strftime("%Y-%m-%d")
             target_start_time_str = target_dt.strftime("%H:%M:00")
 
-            print(f"\n{prefix}   [{slot_key}] {target_date_str} {target_start_time_str} ({rules_data.timezone})")
+            print(
+                f"\n{prefix}   [{slot_key}] {target_date_str} {target_start_time_str} ({rules_data.timezone})"
+            )
 
-            if _is_already_booked(approved_bookings, target_date_str, target_start_time_str):
+            if _is_already_booked(
+                approved_bookings, target_date_str, target_start_time_str
+            ):
                 print(f"{prefix}   [{slot_key}] Already booked — skipping")
                 continue
 
             available_teachers = get_available_teachers(client, target_slot_iso)
-            available_info = ", ".join([f"{t['name']} ({t['id']})" for t in available_teachers])
+            available_info = ", ".join(
+                [f"{t['name']} ({t['id']})" for t in available_teachers]
+            )
             print(f"{prefix}   Available:   {available_info}")
 
-            candidates, used_fallback = _get_candidates(rule, available_teachers, approved_bookings, target_date_str, target_dt)
+            candidates, used_fallback = _get_candidates(
+                rule, available_teachers, approved_bookings, target_date_str, target_dt
+            )
             if not candidates:
                 print(f"{prefix}   No suitable teachers available — skipping")
-                send_push(f"[{schedule_name}] No teachers available for {slot_key} on {target_date_str} at {target_start_time_str}", priority=1)
+                send_push(
+                    f"[{schedule_name}] No teachers available for {slot_key} on {target_date_str} at {target_start_time_str}",
+                    priority=1,
+                )
                 continue
 
-            candidate_order = ", ".join([f"{c['name']} ({c['id']})" for c in candidates])
+            candidate_order = ", ".join(
+                [f"{c['name']} ({c['id']})" for c in candidates]
+            )
             print(f"{prefix}   Candidates:  {candidate_order}")
 
             _wait_for_window(booking_open_dt, now_local, local_tz, client)
@@ -455,16 +556,28 @@ def _run_schedule(
                     print(f"{prefix}   Re-auth:     success")
                 else:
                     print(f"{prefix}   Re-auth:     FAILED — booking may fail")
-                    send_push(f"[{schedule_name}] Token refresh failed before booking {slot_key} — booking may fail", priority=1)
+                    send_push(
+                        f"[{schedule_name}] Token refresh failed before booking {slot_key} — booking may fail",
+                        priority=1,
+                    )
 
             success = _attempt_booking(
-                client, candidates, target_slot_iso, force_soft,
-                approved_bookings, target_date_str, target_start_time_str,
-                used_fallback=used_fallback, slot_key=slot_key,
+                client,
+                candidates,
+                target_slot_iso,
+                force_soft,
+                approved_bookings,
+                target_date_str,
+                target_start_time_str,
+                used_fallback=used_fallback,
+                slot_key=slot_key,
             )
             if not success:
                 print(f"{prefix}   FAILED:      all teachers exhausted for {slot_key}")
-                send_push(f"[{schedule_name}] Could not book {slot_key} on {target_date_str} at {target_start_time_str} — all teachers failed", priority=1)
+                send_push(
+                    f"[{schedule_name}] Could not book {slot_key} on {target_date_str} at {target_start_time_str} — all teachers failed",
+                    priority=1,
+                )
 
         print(f"\n{prefix} Booking process completed.")
 
@@ -475,6 +588,7 @@ def _run_schedule(
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def run_due_process(force: bool = False, force_soft: bool = False):
     lock_f = acquire_lock()

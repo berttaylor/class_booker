@@ -7,13 +7,14 @@ Strategy:
   internal functions (login, get_bookings, get_available_teachers, book_lesson)
   so we test the orchestration logic without real I/O
 """
+
 from datetime import datetime, timezone, timedelta
 from unittest.mock import MagicMock, patch
 from freezegun import freeze_time
 
 import app.services.scheduler as sched_module
 from app.services.scheduler import get_synced_now, run_due_process
-from app.rules import BookingRule, BookingConfig, ScheduleCredentials, SchedulingRules
+from app.rules import BookingRule, ScheduleCredentials, SchedulingRules
 
 
 # ---------------------------------------------------------------------------
@@ -35,18 +36,10 @@ def make_rules(
     preferred_teachers=None,
     allow_fallbacks: bool = True,
     label: str = "test",
-    open_offset_days: int = 7,
-    open_offset_minutes: int = 30,
-    precheck_lead_seconds: int = 120,
 ) -> SchedulingRules:
     """Construct a minimal SchedulingRules for use in tests."""
     return SchedulingRules(
         timezone="Europe/Madrid",
-        booking=BookingConfig(
-            open_offset_days=open_offset_days,
-            open_offset_minutes=open_offset_minutes,
-            precheck_lead_seconds=precheck_lead_seconds,
-        ),
         credentials=ScheduleCredentials(email="test@example.com", password="secret"),
         rules=[
             BookingRule(
@@ -55,7 +48,8 @@ def make_rules(
                 weekday=weekday,
                 start_time=start_time,
                 slots=1,
-                preferred_teachers=preferred_teachers or ["Maria Garcia", "Carlos Lopez"],
+                preferred_teachers=preferred_teachers
+                or ["Maria Garcia", "Carlos Lopez"],
                 allow_fallbacks=allow_fallbacks,
             )
         ],
@@ -70,6 +64,7 @@ def make_available(teacher_id: str, name: str, local_time: str = "13:00"):
 # get_synced_now
 # ---------------------------------------------------------------------------
 
+
 class TestGetSyncedNow:
     def test_drift_calculation(self, mock_client):
         """Server is 2s ahead of local clock → drift ≈ +2 (within RTT tolerance)."""
@@ -78,7 +73,9 @@ class TestGetSyncedNow:
         server_time = "2026-04-08 11:00:02"  # 2s ahead
 
         with freeze_time(local_now):
-            with patch.object(sched_module, "get_server_time", return_value={"datetime": server_time}):
+            with patch.object(
+                sched_module, "get_server_time", return_value={"datetime": server_time}
+            ):
                 synced, drift = get_synced_now(client)
             # drift should be positive (server ahead)
             assert drift > 1.5
@@ -112,12 +109,16 @@ class TestGetSyncedNow:
             if call_count[0] == 1:
                 return local_now  # before request
             else:
-                return local_now + timedelta(milliseconds=200)  # after response (200ms RTT)
+                return local_now + timedelta(
+                    milliseconds=200
+                )  # after response (200ms RTT)
 
         with patch("app.services.scheduler.dt") as mock_dt:
             mock_dt.now.side_effect = fake_now
             mock_dt.fromisoformat = datetime.fromisoformat
-            with patch.object(sched_module, "get_server_time", return_value={"datetime": server_time}):
+            with patch.object(
+                sched_module, "get_server_time", return_value={"datetime": server_time}
+            ):
                 synced, drift = get_synced_now(client)
 
         # synced = server_dt + half_rtt = local_now + 100ms
@@ -128,6 +129,7 @@ class TestGetSyncedNow:
 # ---------------------------------------------------------------------------
 # run_due_process — helper to run with all I/O mocked
 # ---------------------------------------------------------------------------
+
 
 def run_due_with_mocks(
     *,
@@ -152,24 +154,35 @@ def run_due_with_mocks(
         book_results = [{"status": "success", "id": "9999"}]
 
     with freeze_time(frozen_time) as frozen:
-        # We also need to patch get_synced_now to return an advancing time 
-        # based on the frozen time, otherwise the loop condition in scheduler 
+        # We also need to patch get_synced_now to return an advancing time
+        # based on the frozen time, otherwise the loop condition in scheduler
         # might still be stuck if it depends on a sync that doesn't see the tick.
         # However, scheduler.py calls get_synced_now(client) which calls dt.now(timezone.utc).
         # freezegun should handle dt.now() automatically.
-        
-        with patch.object(sched_module, "load_active_schedules", return_value=[("test", rules)]), \
-             patch.object(sched_module, "load_teacher_cache", return_value=FAKE_CACHE), \
-             patch.object(sched_module, "validate_rules_against_cache"), \
-             patch.object(sched_module, "login", return_value=token), \
-             patch.object(sched_module, "get_server_time", side_effect=lambda client: {"datetime": frozen.time_to_freeze.strftime("%Y-%m-%d %H:%M:%S")}), \
-             patch.object(sched_module, "get_bookings", return_value=existing_bookings), \
-             patch.object(sched_module, "get_available_teachers", return_value=available_teachers), \
-             patch.object(sched_module, "book_lesson", side_effect=book_results), \
-             patch.object(sched_module, "acquire_lock", return_value=MagicMock()), \
-             patch.object(sched_module, "release_lock"), \
-             patch.object(sched_module, "is_token_expired", return_value=False):
 
+        with (
+            patch.object(
+                sched_module, "load_active_schedules", return_value=[("test", rules)]
+            ),
+            patch.object(sched_module, "load_teacher_cache", return_value=FAKE_CACHE),
+            patch.object(sched_module, "validate_rules_against_cache"),
+            patch.object(sched_module, "login", return_value=token),
+            patch.object(
+                sched_module,
+                "get_server_time",
+                side_effect=lambda client: {
+                    "datetime": frozen.time_to_freeze.strftime("%Y-%m-%d %H:%M:%S")
+                },
+            ),
+            patch.object(sched_module, "get_bookings", return_value=existing_bookings),
+            patch.object(
+                sched_module, "get_available_teachers", return_value=available_teachers
+            ),
+            patch.object(sched_module, "book_lesson", side_effect=book_results),
+            patch.object(sched_module, "acquire_lock", return_value=MagicMock()),
+            patch.object(sched_module, "release_lock"),
+            patch.object(sched_module, "is_token_expired", return_value=False),
+        ):
             # Patch time.sleep to advance frozen time instead of sleeping
             def advance_time(seconds):
                 frozen.tick(timedelta(seconds=seconds))
@@ -183,6 +196,7 @@ def run_due_with_mocks(
 # ---------------------------------------------------------------------------
 # Booking window / rule evaluation
 # ---------------------------------------------------------------------------
+
 
 class TestRuleEvaluation:
     def test_rule_due_within_precheck_window(self, capsys):
@@ -202,7 +216,6 @@ class TestRuleEvaluation:
             weekday="wed",
             start_time="13:00",
             preferred_teachers=["Maria Garcia"],
-            precheck_lead_seconds=120,
         )
         available = [make_available("184", "Maria Garcia")]
 
@@ -224,7 +237,6 @@ class TestRuleEvaluation:
             weekday="wed",
             start_time="13:00",
             preferred_teachers=["Maria Garcia"],
-            precheck_lead_seconds=120,
         )
         available = [make_available("184", "Maria Garcia")]
 
@@ -283,10 +295,15 @@ class TestRuleEvaluation:
 # Candidate selection
 # ---------------------------------------------------------------------------
 
+
 class TestCandidateSelection:
     def test_preferred_teacher_selected_first(self):
         """Teacher 184 is first in teacher_ids and available → books 184, not 159."""
-        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia", "Carlos Lopez"])
+        rules = make_rules(
+            weekday="wed",
+            start_time="13:00",
+            preferred_teachers=["Maria Garcia", "Carlos Lopez"],
+        )
         available = [
             make_available("184", "Maria Garcia"),
             make_available("159", "Carlos Lopez"),
@@ -299,7 +316,9 @@ class TestCandidateSelection:
         )
 
         assert book_fn.called
-        first_call_teacher = book_fn.call_args_list[0][0][1]  # 2nd positional arg = teacher_id
+        first_call_teacher = book_fn.call_args_list[0][0][
+            1
+        ]  # 2nd positional arg = teacher_id
         assert first_call_teacher == "184"
 
     def test_fallback_used_when_no_preferred(self):
@@ -338,7 +357,9 @@ class TestCandidateSelection:
 
     def test_no_available_teachers_skips(self):
         """If no teachers available at all, booking is skipped."""
-        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"])
+        rules = make_rules(
+            weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"]
+        )
 
         book_fn = run_due_with_mocks(
             frozen_time="2026-04-08T10:29:00+00:00",
@@ -352,10 +373,13 @@ class TestCandidateSelection:
 # Already-booked check
 # ---------------------------------------------------------------------------
 
+
 class TestAlreadyBooked:
     def test_already_booked_skips_rule(self):
         """If the target slot is already booked, book_lesson is never called."""
-        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"])
+        rules = make_rules(
+            weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"]
+        )
 
         # Lesson is Wed 2026-04-15 13:00 Madrid.
         # In ISO: 2026-04-15T13:00:00+02:00 → Madrid date = "2026-04-15", time = "13:00:00"
@@ -384,18 +408,35 @@ class TestAlreadyBooked:
 # 60-minute daily limit
 # ---------------------------------------------------------------------------
 
+
 class TestDailyLimit:
     def test_60min_limit_filters_teacher(self):
         """
         If teacher 184 already has 2 bookings (60 min total) on the target day,
         they should be filtered out and 159 booked instead.
         """
-        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia", "Carlos Lopez"])
+        rules = make_rules(
+            weekday="wed",
+            start_time="13:00",
+            preferred_teachers=["Maria Garcia", "Carlos Lopez"],
+        )
         target_date = "2026-04-15"
 
         existing = [
-            {"staff_id": "184", "date": target_date, "start_time": "11:00:00", "status": "approved", "past": False},
-            {"staff_id": "184", "date": target_date, "start_time": "11:30:00", "status": "approved", "past": False},
+            {
+                "staff_id": "184",
+                "date": target_date,
+                "start_time": "11:00:00",
+                "status": "approved",
+                "past": False,
+            },
+            {
+                "staff_id": "184",
+                "date": target_date,
+                "start_time": "11:30:00",
+                "status": "approved",
+                "past": False,
+            },
         ]
         available = [
             make_available("184", "Maria Garcia"),
@@ -415,11 +456,19 @@ class TestDailyLimit:
 
     def test_under_60min_limit_not_filtered(self):
         """Teacher with only 1 booking (30 min) on the day is still eligible."""
-        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"])
+        rules = make_rules(
+            weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"]
+        )
         target_date = "2026-04-15"
 
         existing = [
-            {"staff_id": "184", "date": target_date, "start_time": "11:00:00", "status": "approved", "past": False},
+            {
+                "staff_id": "184",
+                "date": target_date,
+                "start_time": "11:00:00",
+                "status": "approved",
+                "past": False,
+            },
         ]
         available = [make_available("184", "Maria Garcia")]
 
@@ -439,18 +488,29 @@ class TestDailyLimit:
 # Adjacency prioritization
 # ---------------------------------------------------------------------------
 
+
 class TestAdjacencyPriority:
     def test_adjacent_teacher_moved_to_front(self):
         """
         If teacher 159 taught the slot at 12:30 (30 min before 13:00),
         they should be moved to the front of candidates even if 184 is preferred.
         """
-        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia", "Carlos Lopez"])
+        rules = make_rules(
+            weekday="wed",
+            start_time="13:00",
+            preferred_teachers=["Maria Garcia", "Carlos Lopez"],
+        )
         target_date = "2026-04-15"
 
         existing = [
             # 159 taught the 12:30 slot
-            {"staff_id": "159", "date": target_date, "start_time": "12:30:00", "status": "approved", "past": False},
+            {
+                "staff_id": "159",
+                "date": target_date,
+                "start_time": "12:30:00",
+                "status": "approved",
+                "past": False,
+            },
         ]
         available = [
             make_available("184", "Maria Garcia"),
@@ -470,12 +530,20 @@ class TestAdjacencyPriority:
 
     def test_adjacency_only_prioritizes_if_in_candidates(self):
         """Adjacent teacher who isn't in candidates (e.g. excluded by limit) is not promoted."""
-        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"])
+        rules = make_rules(
+            weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"]
+        )
         target_date = "2026-04-15"
 
         existing = [
             # 159 taught previous slot but is NOT in teacher_ids and fallbacks disabled
-            {"staff_id": "159", "date": target_date, "start_time": "12:30:00", "status": "approved", "past": False},
+            {
+                "staff_id": "159",
+                "date": target_date,
+                "start_time": "12:30:00",
+                "status": "approved",
+                "past": False,
+            },
         ]
         available = [make_available("184", "Maria Garcia")]  # only 184 available
 
@@ -495,16 +563,22 @@ class TestAdjacencyPriority:
 # Retry logic
 # ---------------------------------------------------------------------------
 
+
 class TestRetryLogic:
     def test_retry_on_timing_error(self):
         """
         If book_lesson returns the Spanish timing error twice then succeeds,
         book_lesson should be called 3 times total (2 retries + 1 success).
         """
-        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"])
+        rules = make_rules(
+            weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"]
+        )
         available = [make_available("184", "Maria Garcia")]
 
-        timing_error = {"status": "error", "message": "La fecha excede el límite de agendamiento."}
+        timing_error = {
+            "status": "error",
+            "message": "La fecha excede el límite de agendamiento.",
+        }
         book_results = [timing_error, timing_error, {"status": "success", "id": "9999"}]
 
         book_fn = run_due_with_mocks(
@@ -521,7 +595,9 @@ class TestRetryLogic:
         If timing error persists all 3 attempts, book_lesson is called exactly 3 times
         and then moves on (or fails).
         """
-        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"])
+        rules = make_rules(
+            weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"]
+        )
         available = [make_available("184", "Maria Garcia")]
 
         timing_error = {"status": "error", "message": "excede el agendamiento límite"}
@@ -538,7 +614,11 @@ class TestRetryLogic:
 
     def test_no_retry_on_non_timing_error(self):
         """A generic error should not trigger a retry — fail fast and try next candidate."""
-        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia", "Carlos Lopez"])
+        rules = make_rules(
+            weekday="wed",
+            start_time="13:00",
+            preferred_teachers=["Maria Garcia", "Carlos Lopez"],
+        )
         available = [
             make_available("184", "Maria Garcia"),
             make_available("159", "Carlos Lopez"),
@@ -562,10 +642,13 @@ class TestRetryLogic:
 # Force / soft-force modes
 # ---------------------------------------------------------------------------
 
+
 class TestForceMode:
     def test_force_processes_even_when_no_due_rules(self):
         """With --force and no currently-due rules, the next upcoming rule is forced."""
-        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"])
+        rules = make_rules(
+            weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"]
+        )
         available = [make_available("184", "Maria Garcia")]
 
         # Freeze at a time far from the booking window (not due)
@@ -579,7 +662,9 @@ class TestForceMode:
 
     def test_force_soft_dry_run_does_not_book(self):
         """With --force-soft, book_lesson should never be called."""
-        rules = make_rules(weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"])
+        rules = make_rules(
+            weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"]
+        )
         available = [make_available("184", "Maria Garcia")]
 
         book_fn = run_due_with_mocks(
@@ -595,12 +680,15 @@ class TestForceMode:
 # Lock prevention
 # ---------------------------------------------------------------------------
 
+
 class TestLock:
     def test_lock_prevents_concurrent_run(self, capsys):
         """If acquire_lock returns None, run_due_process exits early."""
         with freeze_time("2026-04-08T10:29:00+00:00"):
-            with patch.object(sched_module, "acquire_lock", return_value=None), \
-                 patch.object(sched_module, "book_lesson") as book_fn:
+            with (
+                patch.object(sched_module, "acquire_lock", return_value=None),
+                patch.object(sched_module, "book_lesson") as book_fn,
+            ):
                 run_due_process()
 
         assert not book_fn.called
@@ -612,6 +700,7 @@ class TestLock:
 # approved_bookings updated after success
 # ---------------------------------------------------------------------------
 
+
 class TestBookingsCacheUpdate:
     def test_approved_bookings_updated_after_first_rule_success(self):
         """
@@ -621,12 +710,9 @@ class TestBookingsCacheUpdate:
         # Two rules on the same day — both become due simultaneously
         rules = SchedulingRules(
             timezone="Europe/Madrid",
-            booking=BookingConfig(
-                open_offset_days=7,
-                open_offset_minutes=30,
-                precheck_lead_seconds=120,
+            credentials=ScheduleCredentials(
+                email="test@example.com", password="secret"
             ),
-            credentials=ScheduleCredentials(email="test@example.com", password="secret"),
             rules=[
                 BookingRule(
                     label="rule1",
@@ -657,23 +743,44 @@ class TestBookingsCacheUpdate:
         frozen_time = "2026-04-08T10:29:00+00:00"
 
         with freeze_time(frozen_time) as frozen:
-            with patch.object(sched_module, "load_active_schedules", return_value=[("test", rules)]), \
-                 patch.object(sched_module, "load_teacher_cache", return_value=FAKE_CACHE), \
-                 patch.object(sched_module, "validate_rules_against_cache"), \
-                 patch.object(sched_module, "login", return_value="fake.token"), \
-                 patch.object(sched_module, "get_server_time", side_effect=lambda client: {"datetime": frozen.time_to_freeze.strftime("%Y-%m-%d %H:%M:%S")}), \
-                 patch.object(sched_module, "get_bookings", return_value=[]), \
-                 patch.object(sched_module, "get_available_teachers", return_value=available), \
-                 patch.object(sched_module, "book_lesson",
-                              return_value={"status": "success", "id": "9999"}) as book_fn, \
-                 patch.object(sched_module, "acquire_lock", return_value=MagicMock()), \
-                 patch.object(sched_module, "release_lock"), \
-                 patch.object(sched_module, "is_token_expired", return_value=False):
+            with (
+                patch.object(
+                    sched_module,
+                    "load_active_schedules",
+                    return_value=[("test", rules)],
+                ),
+                patch.object(
+                    sched_module, "load_teacher_cache", return_value=FAKE_CACHE
+                ),
+                patch.object(sched_module, "validate_rules_against_cache"),
+                patch.object(sched_module, "login", return_value="fake.token"),
+                patch.object(
+                    sched_module,
+                    "get_server_time",
+                    side_effect=lambda client: {
+                        "datetime": frozen.time_to_freeze.strftime("%Y-%m-%d %H:%M:%S")
+                    },
+                ),
+                patch.object(sched_module, "get_bookings", return_value=[]),
+                patch.object(
+                    sched_module, "get_available_teachers", return_value=available
+                ),
+                patch.object(
+                    sched_module,
+                    "book_lesson",
+                    return_value={"status": "success", "id": "9999"},
+                ) as book_fn,
+                patch.object(sched_module, "acquire_lock", return_value=MagicMock()),
+                patch.object(sched_module, "release_lock"),
+                patch.object(sched_module, "is_token_expired", return_value=False),
+            ):
 
                 def advance_time(seconds):
                     frozen.tick(timedelta(seconds=seconds))
 
-                with patch("app.services.scheduler.time.sleep", side_effect=advance_time):
+                with patch(
+                    "app.services.scheduler.time.sleep", side_effect=advance_time
+                ):
                     run_due_process()
 
         # book_lesson should only be called once — second rule sees the slot as taken
@@ -684,14 +791,17 @@ class TestBookingsCacheUpdate:
 # Teacher cache checks
 # ---------------------------------------------------------------------------
 
+
 class TestTeacherCache:
     def test_exits_if_no_cache(self, capsys):
         """run_due_process exits early with a message when teachers.json is missing."""
         with freeze_time("2026-04-08T10:29:00+00:00"):
-            with patch.object(sched_module, "load_teacher_cache", return_value={}), \
-                 patch.object(sched_module, "acquire_lock", return_value=MagicMock()), \
-                 patch.object(sched_module, "release_lock"), \
-                 patch.object(sched_module, "book_lesson") as book_fn:
+            with (
+                patch.object(sched_module, "load_teacher_cache", return_value={}),
+                patch.object(sched_module, "acquire_lock", return_value=MagicMock()),
+                patch.object(sched_module, "release_lock"),
+                patch.object(sched_module, "book_lesson") as book_fn,
+            ):
                 run_due_process()
 
         assert not book_fn.called

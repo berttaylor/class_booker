@@ -8,6 +8,10 @@ from typing import List
 
 VALID_WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
+BOOKING_OPEN_OFFSET_DAYS = 7
+BOOKING_OPEN_OFFSET_MINUTES = 30
+BOOKING_PRECHECK_LEAD_SECONDS = 120
+
 
 class BookingRule(BaseModel):
     label: str
@@ -60,13 +64,10 @@ class BookingRule(BaseModel):
     def slot_times(self) -> List[str]:
         """Returns list of HH:MM start times for each slot."""
         base = dt.strptime(self.start_time, "%H:%M")
-        return [(base + timedelta(minutes=30 * i)).strftime("%H:%M") for i in range(self.slots)]
-
-
-class BookingConfig(BaseModel):
-    open_offset_days: int
-    open_offset_minutes: int
-    precheck_lead_seconds: int
+        return [
+            (base + timedelta(minutes=30 * i)).strftime("%H:%M")
+            for i in range(self.slots)
+        ]
 
 
 class ScheduleSettings(BaseModel):
@@ -80,7 +81,6 @@ class ScheduleCredentials(BaseModel):
 
 class SchedulingRules(BaseModel):
     timezone: str
-    booking: BookingConfig
     rules: List[BookingRule]
     settings: ScheduleSettings = ScheduleSettings()
     credentials: ScheduleCredentials | None = None
@@ -101,7 +101,9 @@ def load_scheduling_rules(path: str = "scheduling_rules/bert.yml") -> Scheduling
     return SchedulingRules(**data)
 
 
-def load_active_schedules(directory: str = "scheduling_rules") -> list[tuple[str, SchedulingRules]]:
+def load_active_schedules(
+    directory: str = "scheduling_rules",
+) -> list[tuple[str, SchedulingRules]]:
     """
     Discovers all .yml files in directory, loads each, and returns
     (schedule_name, rules) for those with settings.is_active = True
