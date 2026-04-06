@@ -10,8 +10,12 @@ os.environ.setdefault("TEACHER_SYNC_LOGIN_PASSWORD", "test-password-123")
 import pytest
 import respx
 
+from app import logger
 from app.client import BookingClient
 from tests.base import TEST_BASE_URL
+
+# Disable logging during tests
+logger.set_enabled(False)
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 

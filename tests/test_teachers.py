@@ -9,6 +9,7 @@ from app.teachers import (
     validate_rules_against_cache,
 )
 from app.rules import BookingRule, SchedulingRules
+from app import logger
 
 
 # ---------------------------------------------------------------------------
@@ -149,10 +150,14 @@ class TestValidateRulesAgainstCache:
     def test_removed_name_warns_not_raises(self, capsys):
         cache = make_cache(("Maria Garcia", 184, "REMOVED"))
         rules = make_rules_data(["Maria Garcia"])
-        validate_rules_against_cache(rules, cache)  # should not raise
-        captured = capsys.readouterr()
-        assert "REMOVED" in captured.out
-        assert "Maria Garcia" in captured.out
+        logger.set_enabled(True)
+        try:
+            validate_rules_against_cache(rules, cache)  # should not raise
+            captured = capsys.readouterr()
+            assert "REMOVED" in captured.out
+            assert "Maria Garcia" in captured.out
+        finally:
+            logger.set_enabled(False)
 
     def test_disabled_rule_not_validated(self):
         """Disabled rules should not be checked."""

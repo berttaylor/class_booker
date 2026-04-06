@@ -9,6 +9,12 @@ LOG_DIR = BASE_DIR / "logs"
 
 _context = threading.local()
 _run_id = None
+_enabled = "PYTEST_CURRENT_TEST" not in os.environ
+
+
+def set_enabled(enabled):
+    global _enabled
+    _enabled = enabled
 
 
 def set_schedule(schedule_name):
@@ -33,6 +39,9 @@ def _ensure_logs():
 
 
 def _append_to_log(log_name, event):
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return
+
     _ensure_logs()
     path = LOG_DIR / f"{log_name}.json"
 
@@ -79,6 +88,9 @@ def _append_to_log(log_name, event):
 
 
 def log(message, level="INFO", schedule=None, run_id=None, **kwargs):
+    if not _enabled:
+        return
+
     if schedule is None:
         schedule = get_schedule()
 

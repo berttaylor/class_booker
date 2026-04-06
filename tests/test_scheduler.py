@@ -15,6 +15,7 @@ from freezegun import freeze_time
 import app.services.scheduler as sched_module
 from app.services.scheduler import get_synced_now, run_due_process
 from app.rules import BookingRule, ScheduleCredentials, SchedulingRules
+import app.logger as logger
 
 
 # ---------------------------------------------------------------------------
@@ -664,16 +665,20 @@ class TestForceMode:
 class TestLock:
     def test_lock_prevents_concurrent_run(self, capsys):
         """If acquire_lock returns None, run_due_process exits early."""
-        with freeze_time("2026-04-08T10:29:00+00:00"):
-            with (
-                patch.object(sched_module, "acquire_lock", return_value=None),
-                patch.object(sched_module, "book_lesson") as book_fn,
-            ):
-                run_due_process()
+        logger.set_enabled(True)
+        try:
+            with freeze_time("2026-04-08T10:29:00+00:00"):
+                with (
+                    patch.object(sched_module, "acquire_lock", return_value=None),
+                    patch.object(sched_module, "book_lesson") as book_fn,
+                ):
+                    run_due_process()
 
-        assert not book_fn.called
-        captured = capsys.readouterr()
-        assert "Another instance" in captured.out
+            assert not book_fn.called
+            captured = capsys.readouterr()
+            assert "Another instance" in captured.out
+        finally:
+            logger.set_enabled(False)
 
 
 # ---------------------------------------------------------------------------
@@ -773,15 +778,21 @@ class TestBookingsCacheUpdate:
 class TestTeacherCache:
     def test_exits_if_no_cache(self, capsys):
         """run_due_process exits early with a message when teachers.json is missing."""
-        with freeze_time("2026-04-08T10:29:00+00:00"):
-            with (
-                patch.object(sched_module, "load_teacher_cache", return_value={}),
-                patch.object(sched_module, "acquire_lock", return_value=MagicMock()),
-                patch.object(sched_module, "release_lock"),
-                patch.object(sched_module, "book_lesson") as book_fn,
-            ):
-                run_due_process()
+        logger.set_enabled(True)
+        try:
+            with freeze_time("2026-04-08T10:29:00+00:00"):
+                with (
+                    patch.object(sched_module, "load_teacher_cache", return_value={}),
+                    patch.object(
+                        sched_module, "acquire_lock", return_value=MagicMock()
+                    ),
+                    patch.object(sched_module, "release_lock"),
+                    patch.object(sched_module, "book_lesson") as book_fn,
+                ):
+                    run_due_process()
 
-        assert not book_fn.called
-        captured = capsys.readouterr()
-        assert "populate-teachers" in captured.out
+            assert not book_fn.called
+            captured = capsys.readouterr()
+            assert "populate-teachers" in captured.out
+        finally:
+            logger.set_enabled(False)

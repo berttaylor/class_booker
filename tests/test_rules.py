@@ -9,6 +9,7 @@ from app.rules import (
     ScheduleSettings,
     ScheduleCredentials,
 )
+from app import logger
 
 FIXTURE_YAML = """\
 timezone: Europe/Madrid
@@ -282,17 +283,25 @@ class TestLoadActiveSchedules:
 
     def test_skips_schedules_without_credentials(self, tmp_path, capsys):
         self._make_yml(tmp_path, "nocreds", include_credentials=False)
-        result = load_active_schedules(str(tmp_path))
-        assert result == []
-        captured = capsys.readouterr()
-        assert "no credentials" in captured.out
+        logger.set_enabled(True)
+        try:
+            result = load_active_schedules(str(tmp_path))
+            assert result == []
+            captured = capsys.readouterr()
+            assert "no credentials" in captured.out
+        finally:
+            logger.set_enabled(False)
 
     def test_skips_invalid_yaml(self, tmp_path, capsys):
         (tmp_path / "bad.yml").write_text("timezone: [[[invalid")
-        result = load_active_schedules(str(tmp_path))
-        assert result == []
-        captured = capsys.readouterr()
-        assert "bad" in captured.out
+        logger.set_enabled(True)
+        try:
+            result = load_active_schedules(str(tmp_path))
+            assert result == []
+            captured = capsys.readouterr()
+            assert "bad" in captured.out
+        finally:
+            logger.set_enabled(False)
 
     def test_empty_directory(self, tmp_path):
         result = load_active_schedules(str(tmp_path))
