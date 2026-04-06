@@ -443,12 +443,12 @@ def _run_schedule(
             hours, remainder = divmod(total_seconds, 3600)
             minutes, seconds = divmod(remainder, 60)
             countdown = f"{hours}h {minutes}m {seconds}s"
-            for_class = next_lesson_dt.strftime("%Y-%m-%d %H:%M")
+            slot_key = next_rule.id
             logger.info(
-                f"Nothing to book - booking in {countdown} (for class {for_class})",
+                f"Nothing to book - booking in {countdown} (for {slot_key})",
                 schedule=schedule_name,
                 next_window=next_open_dt.strftime("%Y-%m-%d %H:%M"),
-                for_class=for_class,
+                slot_key=slot_key,
             )
         else:
             logger.info(
