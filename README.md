@@ -27,12 +27,13 @@ Python CLI tool that automates Spanish class booking by calling the booking plat
 
 ### Scheduled jobs
 
-`setup.sh` installs two independent launchd jobs:
+`setup.sh` installs three independent launchd jobs:
 
 | Job | Schedule | Responsibility |
 |---|---|---|
 | `run-due` | Every hour at :29 and :59 | Reads local `scheduling_rules/bert.yml`, checks for due bookings, books. |
 | `populate-teachers` | Daily at 03:00 | Fetches tutors from the booking API, merges into `data/teachers.json`. |
+| `web-interface` | Always online | Browser UI for editing rules and viewing logs. |
 
 ### Rule format
 
@@ -141,7 +142,7 @@ python main.py server-time
 Edit and validate the schedule in a browser:
 ```bash
 python web.py
-# then open http://localhost:5001
+# then open http://localhost:8008
 ```
 
 ## Features

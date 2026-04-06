@@ -1,7 +1,7 @@
 """
 Schedule editor web UI.
 Run with: python web.py
-Then open http://localhost:5001/schedules/bert in your browser.
+Then open http://localhost:8008/schedules/bert in your browser.
 """
 
 import re

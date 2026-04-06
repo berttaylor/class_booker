@@ -60,9 +60,10 @@ web.py               — Flask schedule editor (browser UI with validation)
   - `timezone`, `rules` — timezone and booking rules
   - Edit directly or via `python web.py`
 
-**Scheduled jobs** (two independent launchd jobs, all managed by `setup.sh`):
+**Scheduled jobs** (three independent launchd jobs, all managed by `setup.sh`):
 - `run-due` (:29, :59) — reads local `scheduling_rules/bert.yml`, checks for due bookings, books.
 - `populate-teachers` (03:00 daily) — fetches tutors from the booking API, merges into `data/teachers.json`.
+- `web-interface` (always online) — browser UI for editing rules and viewing logs.
 
 **`BookingRule` schema** (`app/rules.py`): each rule has `weekday` (single string, e.g. `"mon"`), `start_time` (HH:MM, on the hour or half-hour), `slots` (1 or 2), and `preferred_teachers` (non-empty list of teacher name strings). An optional `label` can be provided; if missing, the `id` property is computed as `f"{weekday}_{start_time}"`. `slot_times()` expands to `["13:00"]` or `["13:00", "13:30"]` depending on `slots`. Pydantic validators enforce all constraints at load time.
 
@@ -70,7 +71,7 @@ web.py               — Flask schedule editor (browser UI with validation)
 
 **Scheduler** (`services/scheduler.py` → `run_due_process`): two-phase design — Phase 1 uses the local clock only to check if any rule is due (no API calls); Phase 2 authenticates and syncs server time only when a booking is actually due. `_evaluate_rules` expands each rule into individual slot entries keyed by `slot_key` (e.g. `wed_13:00_slot1`), returning `(rule, slot_key)` tuples in `due_rules` and dicts keyed by `slot_key`. Uses a file lock (`.run_due.lock`) to prevent concurrent runs. A random delay of 15–30 seconds is applied before each booking attempt to simulate natural behaviour.
 
-**Schedule editor** (`web.py`): Flask app serving a CodeMirror YAML editor at `http://localhost:5001`. Validates against `SchedulingRules` schema, checks teacher names against `data/teachers.json`, and detects duplicate rule IDs before saving.
+**Schedule editor** (`web.py`): Flask app serving a CodeMirror YAML editor at `http://localhost:8008`. Validates against `SchedulingRules` schema, checks teacher names against `data/teachers.json`, and detects duplicate rule IDs before saving.
 
 ## Testing
 

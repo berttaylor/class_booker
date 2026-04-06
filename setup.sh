@@ -145,8 +145,43 @@ cat > "$RUNNERS_DIR/$PLIST_TEACHERS.plist" <<EOF
 EOF
 echo "✓ Generated runners/$PLIST_TEACHERS.plist  (populate-teachers daily at 03:00)"
 
-# ── Load both into launchd ────────────────────────────────────────────────────
-for PLIST in "$PLIST_RUN" "$PLIST_TEACHERS"; do
+# ── web-interface plist (always online) ─────────────────────────────────────
+PLIST_WEB="$BASE_PLIST.web"
+cat > "$RUNNERS_DIR/$PLIST_WEB.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$PLIST_WEB</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>$SCRIPT_DIR/.venv/bin/python3</string>
+        <string>$SCRIPT_DIR/web.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>$SCRIPT_DIR</string>
+
+    <key>StandardOutPath</key>
+    <string>$LOG_OUT</string>
+
+    <key>StandardErrorPath</key>
+    <string>$LOG_ERR</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+EOF
+echo "✓ Generated runners/$PLIST_WEB.plist  (web interface always online)"
+
+# ── Load all into launchd ────────────────────────────────────────────────────
+for PLIST in "$PLIST_RUN" "$PLIST_TEACHERS" "$PLIST_WEB"; do
     DEST="$HOME/Library/LaunchAgents/$PLIST.plist"
     if launchctl list | grep -q "$PLIST"; then
         launchctl unload "$DEST" 2>/dev/null || true
@@ -159,13 +194,16 @@ done
 echo ""
 echo "=== Setup complete ==="
 echo ""
-echo "Two scheduled jobs installed:"
+echo "Three services installed:"
 echo "  run-due           — every hour at :29 and :59 (books due lessons)"
 echo "  populate-teachers — daily at 03:00 (refreshes teacher list)"
+echo "  web-interface     — always online (schedule editor and logs)"
+echo ""
+echo "Web interface is available at:"
+echo "  http://localhost:8008"
 echo ""
 echo "Useful commands:"
 echo "  tail -f logs/main.log          # watch live logs"
 echo "  python main.py run-due --force-soft   # dry-run the next upcoming rule"
 echo "  python main.py populate-teachers      # manual teacher refresh"
-echo "  python web.py                         # open schedule editor in browser"
 echo "  launchctl list | grep $(basename "$SCRIPT_DIR")  # check service status"
