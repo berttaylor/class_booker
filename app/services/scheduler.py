@@ -21,7 +21,6 @@ from app.rules import (
     BOOKING_OPEN_OFFSET_MINUTES,
     BOOKING_PRECHECK_LEAD_SECONDS,
 )
-from app.services.session import ensure_fresh_token
 from app.teachers import load_teacher_cache, validate_rules_against_cache
 from app.utils import get_server_time
 
@@ -319,6 +318,17 @@ def _wait_for_window(booking_open_dt, now_local, local_tz, client):
     print("\n  Window open! Booking...")
 
 
+def _refresh_schedule_token(
+    client: BookingClient, credentials: dict, cache_file: Path
+) -> bool:
+    """Re-authenticates using this schedule's credentials. Returns True on success."""
+    token = login(client, credentials, cache_file, use_cache=False)
+    if token:
+        client.set_token(token)
+        return True
+    return False
+
+
 def _attempt_booking(
     client,
     candidates,
@@ -327,6 +337,8 @@ def _attempt_booking(
     approved_bookings,
     target_date_str,
     target_start_time_str,
+    credentials: dict,
+    cache_file: Path,
     used_fallback=False,
     slot_key="",
 ) -> bool:
@@ -359,7 +371,7 @@ def _attempt_booking(
                 or "401" in str(res.get("message"))
             ):
                 print("  Re-auth:     token rejected, refreshing...")
-                ensure_fresh_token(client)
+                _refresh_schedule_token(client, credentials, cache_file)
                 res = book_lesson(client, tid, target_slot_iso)
 
             if res.get("status") == "success":
@@ -552,7 +564,7 @@ def _run_schedule(
                 buffer_seconds=60,
             ):
                 print(f"{prefix}   Re-auth:     token near-expiry, refreshing...")
-                if ensure_fresh_token(client):
+                if _refresh_schedule_token(client, credentials, cache_file):
                     print(f"{prefix}   Re-auth:     success")
                 else:
                     print(f"{prefix}   Re-auth:     FAILED — booking may fail")
@@ -569,6 +581,8 @@ def _run_schedule(
                 approved_bookings,
                 target_date_str,
                 target_start_time_str,
+                credentials=credentials,
+                cache_file=cache_file,
                 used_fallback=used_fallback,
                 slot_key=slot_key,
             )
