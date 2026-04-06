@@ -336,19 +336,23 @@ def save(name: str):
     try:
         data = yaml.safe_load(content)
     except yaml.YAMLError as e:
-        return jsonify(ok=False, error=f"YAML error: {e}")
+        msg = str(e).split("\n")[0]
+        return jsonify(ok=False, error=f"Invalid YAML — {msg}")
 
     # Validate rules
     try:
         rules = _load_rules_from_dict(data)
     except Exception as e:
-        return jsonify(ok=False, error=str(e))
+        return jsonify(ok=False, error=_friendly_error(str(e)))
 
     # Check for duplicate rule IDs
     ids = [r.id for r in rules.rules]
     if len(ids) != len(set(ids)):
         dupes = sorted({i for i in ids if ids.count(i) > 1})
-        return jsonify(ok=False, error=f"Duplicate rule IDs: {', '.join(dupes)}")
+        return jsonify(
+            ok=False,
+            error=f"Two rules share the same day and label: {', '.join(dupes)}. Give them different labels.",
+        )
 
     # Validate against teacher cache
     cache = load_teacher_cache()
@@ -371,6 +375,29 @@ def view_log(name: str):
     lines = path.read_text().splitlines()
     content = "\n".join(lines[-500:])
     return render_template_string(LOGS_PAGE, name=name, content=content)
+
+
+def _friendly_error(raw: str) -> str:
+    r = raw.lower()
+    if "weekday" in r:
+        return "Invalid weekday — use one of: mon, tue, wed, thu, fri, sat, sun."
+    if "start_time" in r and "half" in r:
+        return 'Start time must be on the hour or half-hour, e.g. "13:00" or "13:30".'
+    if "start_time" in r:
+        return 'Invalid start time — use HH:MM format, e.g. "09:00" or "18:30".'
+    if "slots" in r:
+        return "Slots must be 1 (30 min) or 2 (1 hour)."
+    if "timezone" in r:
+        return 'Unknown timezone — use a standard timezone like "Europe/London" or "America/New_York".'
+    if "preferred_teachers" in r and "allow_fallbacks" in r:
+        return (
+            "If allow_fallbacks is false, you must list at least one preferred teacher."
+        )
+    if "credentials" in r:
+        return "Missing credentials — add your email and password."
+    if "field required" in r or "missing" in r:
+        return "A required field is missing — check each rule has a label, weekday, start_time, slots, and allow_fallbacks."
+    return "Something doesn't look right — check your rules and try again."
 
 
 def _load_rules_from_dict(data: dict):
