@@ -419,6 +419,7 @@ def _run_schedule(
     force_soft: bool,
 ):
     """Runs the booking process for one schedule file end-to-end."""
+    print()
     prefix = f"[{schedule_name}]"
     actual_force = force or force_soft
 
