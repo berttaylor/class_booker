@@ -445,11 +445,13 @@ def _run_schedule(
             total_seconds = int(time_until.total_seconds())
             hours, remainder = divmod(total_seconds, 3600)
             minutes, seconds = divmod(remainder, 60)
+            countdown = f"{hours}h {minutes}m {seconds}s"
+            for_class = next_lesson_dt.strftime("%Y-%m-%d %H:%M")
             logger.info(
-                "Nothing to book",
+                f"Nothing to book - booking in {countdown} (for class {for_class})",
                 schedule=schedule_name,
                 next_window=next_open_dt.strftime("%Y-%m-%d %H:%M"),
-                for_class=next_lesson_dt.strftime("%Y-%m-%d %H:%M"),
+                for_class=for_class,
             )
         else:
             logger.info(
