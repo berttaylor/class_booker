@@ -1,46 +1,93 @@
 import pytest
 import yaml
-from pathlib import Path
 
-from app.rules import load_scheduling_rules, load_active_schedules, SchedulingRules, BookingRule, ScheduleSettings, ScheduleCredentials
+from app.rules import (
+    load_scheduling_rules,
+    load_active_schedules,
+    SchedulingRules,
+    BookingRule,
+    ScheduleSettings,
+    ScheduleCredentials,
+)
 
-RULES_FILE = Path(__file__).parent.parent / "scheduling_rules" / "bert.yml"
+FIXTURE_YAML = """\
+timezone: Europe/Madrid
+
+settings:
+  is_active: true
+
+credentials:
+  email: test@example.com
+  password: secret
+
+booking:
+  open_offset_days: 7
+  open_offset_minutes: 30
+  precheck_lead_seconds: 120
+
+rules:
+  - label: midday
+    weekday: mon
+    enabled: true
+    start_time: "13:00"
+    slots: 2
+    preferred_teachers:
+      - "Maria Garcia"
+      - "Carlos Lopez"
+    allow_fallbacks: true
+
+  - label: evening
+    weekday: mon
+    enabled: true
+    start_time: "18:00"
+    slots: 1
+    preferred_teachers:
+      - "Ana Lopez"
+    allow_fallbacks: true
+"""
 
 
 class TestLoadSchedulingRules:
-    def test_loads_real_file_without_error(self):
-        rules = load_scheduling_rules(str(RULES_FILE))
+    def _fixture_file(self, tmp_path):
+        f = tmp_path / "fixture.yml"
+        f.write_text(FIXTURE_YAML)
+        return f
+
+    def test_loads_without_error(self, tmp_path):
+        rules = load_scheduling_rules(str(self._fixture_file(tmp_path)))
         assert isinstance(rules, SchedulingRules)
 
-    def test_timezone(self):
-        rules = load_scheduling_rules(str(RULES_FILE))
+    def test_timezone(self, tmp_path):
+        rules = load_scheduling_rules(str(self._fixture_file(tmp_path)))
         assert rules.timezone == "Europe/Madrid"
 
-    def test_booking_config(self):
-        rules = load_scheduling_rules(str(RULES_FILE))
+    def test_booking_config(self, tmp_path):
+        rules = load_scheduling_rules(str(self._fixture_file(tmp_path)))
         assert rules.booking.open_offset_days == 7
         assert rules.booking.open_offset_minutes == 30
         assert rules.booking.precheck_lead_seconds == 120
 
-    def test_rule_count(self):
-        rules = load_scheduling_rules(str(RULES_FILE))
-        assert len(rules.rules) >= 10
+    def test_rule_count(self, tmp_path):
+        rules = load_scheduling_rules(str(self._fixture_file(tmp_path)))
+        assert len(rules.rules) == 2
 
-    def test_all_rules_enabled(self):
-        rules = load_scheduling_rules(str(RULES_FILE))
+    def test_all_rules_enabled(self, tmp_path):
+        rules = load_scheduling_rules(str(self._fixture_file(tmp_path)))
         assert all(r.enabled for r in rules.rules)
 
-    def test_mon_midday_rule(self):
-        rules = load_scheduling_rules(str(RULES_FILE))
-        rule = next(r for r in rules.rules if r.weekday == "mon" and "midday" in r.label.lower())
+    def test_mon_midday_rule(self, tmp_path):
+        rules = load_scheduling_rules(str(self._fixture_file(tmp_path)))
+        rule = next(
+            r for r in rules.rules if r.weekday == "mon" and "midday" in r.label.lower()
+        )
         assert rule.weekday == "mon"
         assert rule.start_time == "13:00"
         assert rule.slots == 2
         assert rule.allow_fallbacks is True
         assert isinstance(rule.preferred_teachers, list)
 
-    def test_rule_preferred_teachers_are_strings(self):
-        rules = load_scheduling_rules(str(RULES_FILE))
+    def test_rule_preferred_teachers_are_strings(self, tmp_path):
+        rules = load_scheduling_rules(str(self._fixture_file(tmp_path)))
         for rule in rules.rules:
             for name in rule.preferred_teachers:
                 assert isinstance(name, str)
@@ -57,11 +104,18 @@ class TestLoadSchedulingRules:
 
     def test_missing_required_field_raises(self, tmp_path):
         bad_file = tmp_path / "missing_field.yml"
-        bad_file.write_text(yaml.dump({"timezone": "Europe/Madrid", "booking": {
-            "open_offset_days": 7,
-            "open_offset_minutes": 30,
-            "precheck_lead_seconds": 120
-        }}))
+        bad_file.write_text(
+            yaml.dump(
+                {
+                    "timezone": "Europe/Madrid",
+                    "booking": {
+                        "open_offset_days": 7,
+                        "open_offset_minutes": 30,
+                        "precheck_lead_seconds": 120,
+                    },
+                }
+            )
+        )
         with pytest.raises(Exception):
             load_scheduling_rules(str(bad_file))
 
@@ -165,22 +219,35 @@ class TestBookingRuleValidation:
 
     def test_no_fallback_empty_teachers_raises(self):
         with pytest.raises(Exception, match="preferred_teachers"):
-            BookingRule(**self._valid_kwargs(preferred_teachers=[], allow_fallbacks=False))
+            BookingRule(
+                **self._valid_kwargs(preferred_teachers=[], allow_fallbacks=False)
+            )
 
     def test_no_fallback_with_teachers_ok(self):
-        rule = BookingRule(**self._valid_kwargs(preferred_teachers=["Maria Garcia"], allow_fallbacks=False))
+        rule = BookingRule(
+            **self._valid_kwargs(
+                preferred_teachers=["Maria Garcia"], allow_fallbacks=False
+            )
+        )
         assert rule.allow_fallbacks is False
 
     def test_fallback_with_empty_teachers_ok(self):
-        rule = BookingRule(**self._valid_kwargs(preferred_teachers=[], allow_fallbacks=True))
+        rule = BookingRule(
+            **self._valid_kwargs(preferred_teachers=[], allow_fallbacks=True)
+        )
         assert rule.preferred_teachers == []
 
     def test_invalid_timezone_raises(self):
         with pytest.raises(Exception, match="timezone"):
             from app.rules import SchedulingRules, BookingConfig
+
             SchedulingRules(
                 timezone="Not/ATimezone",
-                booking=BookingConfig(open_offset_days=7, open_offset_minutes=30, precheck_lead_seconds=120),
+                booking=BookingConfig(
+                    open_offset_days=7,
+                    open_offset_minutes=30,
+                    precheck_lead_seconds=120,
+                ),
                 rules=[],
             )
 
@@ -196,18 +263,24 @@ class TestScheduleSettings:
 
     def test_scheduling_rules_defaults_settings(self):
         from app.rules import BookingConfig
+
         rules = SchedulingRules(
             timezone="Europe/Madrid",
-            booking=BookingConfig(open_offset_days=7, open_offset_minutes=30, precheck_lead_seconds=120),
+            booking=BookingConfig(
+                open_offset_days=7, open_offset_minutes=30, precheck_lead_seconds=120
+            ),
             rules=[],
         )
         assert rules.settings.is_active is True
 
     def test_scheduling_rules_respects_is_active_false(self):
         from app.rules import BookingConfig
+
         rules = SchedulingRules(
             timezone="Europe/Madrid",
-            booking=BookingConfig(open_offset_days=7, open_offset_minutes=30, precheck_lead_seconds=120),
+            booking=BookingConfig(
+                open_offset_days=7, open_offset_minutes=30, precheck_lead_seconds=120
+            ),
             settings=ScheduleSettings(is_active=False),
             rules=[],
         )
@@ -222,9 +295,12 @@ class TestScheduleCredentials:
 
     def test_credentials_none_by_default(self):
         from app.rules import BookingConfig
+
         rules = SchedulingRules(
             timezone="Europe/Madrid",
-            booking=BookingConfig(open_offset_days=7, open_offset_minutes=30, precheck_lead_seconds=120),
+            booking=BookingConfig(
+                open_offset_days=7, open_offset_minutes=30, precheck_lead_seconds=120
+            ),
             rules=[],
         )
         assert rules.credentials is None
@@ -244,7 +320,11 @@ class TestScheduleCredentials:
 
 class TestLoadActiveSchedules:
     def _make_yml(self, tmp_path, name, is_active=True, include_credentials=True):
-        creds = "credentials:\n  email: a@b.com\n  password: pw\n" if include_credentials else ""
+        creds = (
+            "credentials:\n  email: a@b.com\n  password: pw\n"
+            if include_credentials
+            else ""
+        )
         active_str = "true" if is_active else "false"
         (tmp_path / f"{name}.yml").write_text(
             f"timezone: Europe/Madrid\n"
