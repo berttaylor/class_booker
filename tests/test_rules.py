@@ -21,15 +21,13 @@ credentials:
   password: secret
 
 rules:
-  - label: midday
-    weekday: mon
+  - weekday: mon
     enabled: true
     start_time: "13:00"
     slots: 2
     preferred_teachers:
       - "Maria Garcia"
       - "Carlos Lopez"
-    allow_fallbacks: true
 
   - label: evening
     weekday: mon
@@ -38,7 +36,6 @@ rules:
     slots: 1
     preferred_teachers:
       - "Ana Lopez"
-    allow_fallbacks: true
 """
 
 
@@ -64,15 +61,14 @@ class TestLoadSchedulingRules:
         rules = load_scheduling_rules(str(self._fixture_file(tmp_path)))
         assert all(r.enabled for r in rules.rules)
 
-    def test_mon_midday_rule(self, tmp_path):
+    def test_mon_1300_rule(self, tmp_path):
         rules = load_scheduling_rules(str(self._fixture_file(tmp_path)))
         rule = next(
-            r for r in rules.rules if r.weekday == "mon" and "midday" in r.label.lower()
+            r for r in rules.rules if r.weekday == "mon" and r.start_time == "13:00"
         )
         assert rule.weekday == "mon"
         assert rule.start_time == "13:00"
         assert rule.slots == 2
-        assert rule.allow_fallbacks is True
         assert isinstance(rule.preferred_teachers, list)
 
     def test_rule_preferred_teachers_are_strings(self, tmp_path):
@@ -101,26 +97,30 @@ class TestLoadSchedulingRules:
 class TestBookingRuleModel:
     def _valid_kwargs(self, **overrides):
         base = dict(
-            label="midday",
             enabled=True,
             weekday="mon",
             start_time="13:00",
             slots=1,
             preferred_teachers=["Maria Garcia", "Carlos Lopez"],
-            allow_fallbacks=True,
         )
         base.update(overrides)
         return base
 
     def test_valid_rule(self):
         rule = BookingRule(**self._valid_kwargs())
-        assert rule.id == "mon_midday"
+        assert rule.id == "mon_13:00"
         assert rule.weekday == "mon"
         assert rule.slots == 1
 
-    def test_id_computed_from_weekday_and_label(self):
-        rule = BookingRule(**self._valid_kwargs(weekday="fri", label="evening"))
-        assert rule.id == "fri_evening"
+    def test_id_computed_from_weekday_and_start_time_by_default(self):
+        rule = BookingRule(**self._valid_kwargs(weekday="fri", start_time="12:00"))
+        assert rule.id == "fri_12:00"
+
+    def test_id_computed_from_weekday_and_label_if_provided(self):
+        rule = BookingRule(
+            **self._valid_kwargs(weekday="fri", label="custom", start_time="12:00")
+        )
+        assert rule.id == "fri_custom"
 
     def test_slot_times_single(self):
         rule = BookingRule(**self._valid_kwargs(start_time="13:00", slots=1))
@@ -135,10 +135,9 @@ class TestBookingRuleModel:
         assert rule.slot_times() == ["18:30", "19:00"]
 
     def test_rule_fields_typed_correctly(self):
-        rule = BookingRule(**self._valid_kwargs(enabled=False, allow_fallbacks=False))
+        rule = BookingRule(**self._valid_kwargs(enabled=False))
         assert isinstance(rule.enabled, bool)
         assert isinstance(rule.preferred_teachers, list)
-        assert isinstance(rule.allow_fallbacks, bool)
 
 
 class TestBookingRuleValidation:
@@ -150,7 +149,6 @@ class TestBookingRuleValidation:
             start_time="13:00",
             slots=1,
             preferred_teachers=["Maria Garcia"],
-            allow_fallbacks=True,
         )
         base.update(overrides)
         return base
@@ -195,25 +193,9 @@ class TestBookingRuleValidation:
         rule = BookingRule(**self._valid_kwargs(slots=2))
         assert rule.slots == 2
 
-    def test_no_fallback_empty_teachers_raises(self):
+    def test_empty_teachers_raises(self):
         with pytest.raises(Exception, match="preferred_teachers"):
-            BookingRule(
-                **self._valid_kwargs(preferred_teachers=[], allow_fallbacks=False)
-            )
-
-    def test_no_fallback_with_teachers_ok(self):
-        rule = BookingRule(
-            **self._valid_kwargs(
-                preferred_teachers=["Maria Garcia"], allow_fallbacks=False
-            )
-        )
-        assert rule.allow_fallbacks is False
-
-    def test_fallback_with_empty_teachers_ok(self):
-        rule = BookingRule(
-            **self._valid_kwargs(preferred_teachers=[], allow_fallbacks=True)
-        )
-        assert rule.preferred_teachers == []
+            BookingRule(**self._valid_kwargs(preferred_teachers=[]))
 
     def test_invalid_timezone_raises(self):
         with pytest.raises(Exception, match="timezone"):

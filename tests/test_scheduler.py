@@ -34,8 +34,7 @@ def make_rules(
     weekday: str = "wed",
     start_time: str = "13:00",
     preferred_teachers=None,
-    allow_fallbacks: bool = True,
-    label: str = "test",
+    label: str | None = None,
 ) -> SchedulingRules:
     """Construct a minimal SchedulingRules for use in tests."""
     return SchedulingRules(
@@ -50,7 +49,6 @@ def make_rules(
                 slots=1,
                 preferred_teachers=preferred_teachers
                 or ["Maria Garcia", "Carlos Lopez"],
-                allow_fallbacks=allow_fallbacks,
             )
         ],
     )
@@ -321,30 +319,12 @@ class TestCandidateSelection:
         ]  # 2nd positional arg = teacher_id
         assert first_call_teacher == "184"
 
-    def test_fallback_used_when_no_preferred(self):
-        """No preferred teachers available, fallback=True → books the fallback teacher."""
+    def test_no_booking_when_preferred_not_available(self):
+        """No preferred teachers available → no booking attempted."""
         rules = make_rules(
             weekday="wed",
             start_time="13:00",
             preferred_teachers=["Unknown Teacher"],  # not available
-            allow_fallbacks=True,
-        )
-        available = [make_available("184", "Maria Garcia")]
-
-        book_fn = run_due_with_mocks(
-            frozen_time="2026-04-08T10:29:00+00:00",
-            rules=rules,
-            available_teachers=available,
-        )
-        assert book_fn.called
-
-    def test_no_fallback_when_disabled(self):
-        """No preferred teachers available, fallback=False → no booking attempted."""
-        rules = make_rules(
-            weekday="wed",
-            start_time="13:00",
-            preferred_teachers=["Unknown Teacher"],
-            allow_fallbacks=False,
         )
         available = [make_available("184", "Maria Garcia")]
 
@@ -721,7 +701,6 @@ class TestBookingsCacheUpdate:
                     start_time="13:00",
                     slots=1,
                     preferred_teachers=["Maria Garcia"],
-                    allow_fallbacks=False,
                 ),
                 BookingRule(
                     label="rule2",
@@ -730,7 +709,6 @@ class TestBookingsCacheUpdate:
                     start_time="13:00",  # Same timeslot
                     slots=1,
                     preferred_teachers=["Carlos Lopez"],
-                    allow_fallbacks=False,
                 ),
             ],
         )

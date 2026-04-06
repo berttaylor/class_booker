@@ -211,11 +211,9 @@ def _get_candidates(
     """
     Builds a priority-sorted candidate list for one rule:
       1. Intersect rule.teacher_ids with available teachers
-      2. Fall back to all available teachers if allow_fallbacks is set
-      3. Filter out teachers who have reached the 60-min daily limit
-      4. Promote the teacher from the adjacent preceding slot to the front
-    Returns (candidates, used_fallback) where used_fallback is True if no
-    preferred teachers were available and fallback teachers are being used.
+      2. Filter out teachers who have reached the 60-min daily limit
+      3. Promote the teacher from the adjacent preceding slot to the front
+    Returns candidates where the list is prioritized by preferred order then adjacency.
     """
     available_teacher_ids = [str(t["id"]) for t in available_teachers]
 
@@ -235,17 +233,10 @@ def _get_candidates(
     ]
 
     candidate_info = ", ".join([f"{c['name']} ({c['id']})" for c in candidates])
-
-    used_fallback = False
-    if not candidates and rule.allow_fallbacks:
-        logger.info("Preferred: none — using fallback")
-        candidates = available_teachers
-        used_fallback = True
-    else:
-        logger.info(f"Preferred: {candidate_info}")
+    logger.info(f"Preferred: {candidate_info}")
 
     if not candidates:
-        return [], False
+        return []
 
     # Daily 60-min limit filter
     final_candidates = []
@@ -262,7 +253,7 @@ def _get_candidates(
             logger.info(f"Removed: {cand['name']} ({tid}) — 60m limit")
 
     if not final_candidates:
-        return [], False
+        return []
 
     # Adjacency priority — promote teacher who taught the preceding 30-min slot
     prev_slot_start = (target_dt - timedelta(minutes=30)).strftime("%H:%M:00")
@@ -286,7 +277,7 @@ def _get_candidates(
                 f"Prioritised: {prev_cand['name']} ({prev_teacher}) (adjacent slot)"
             )
 
-    return final_candidates, used_fallback
+    return final_candidates
 
 
 def _wait_for_window(booking_open_dt, now_local, local_tz, client):
@@ -340,7 +331,6 @@ def _attempt_booking(
     target_start_time_str,
     credentials: dict,
     cache_file: Path,
-    used_fallback=False,
     slot_key="",
 ) -> bool:
     """
@@ -378,8 +368,6 @@ def _attempt_booking(
             if res.get("status") == "success":
                 logger.info(f"BOOKED: {tname} ({tid})")
                 msg = f"Booked {tname} for {target_date_str} at {target_start_time_str}"
-                if used_fallback:
-                    msg += " (fallback — preferred teachers unavailable)"
                 send_push(msg, priority=-1)
                 approved_bookings.append(
                     {
@@ -393,7 +381,19 @@ def _attempt_booking(
 
             error_msg = str(res.get("message", "unknown error"))
             logger.error(f"Failed: {tname} ({tid}): {error_msg}")
-            break  # Move to next candidate
+
+            # If it's the specific Spanish error that happens when we're too early,
+            # wait a tiny bit and retry. Otherwise, it's a "real" error, so move
+            # to the next candidate.
+            if (
+                "excede el límite" in error_msg.lower()
+                or "excede el agendamiento límite" in error_msg.lower()
+            ):
+                logger.info(f"Retry {attempt + 1}/{max_retries}...")
+                time.sleep(0.5)
+                continue
+            else:
+                break  # Move to next candidate
 
     return False
 
@@ -538,7 +538,7 @@ def _run_schedule(
             )
             logger.info(f"Available: {available_info}", schedule=schedule_name)
 
-            candidates, used_fallback = _get_candidates(
+            candidates = _get_candidates(
                 rule, available_teachers, approved_bookings, target_date_str, target_dt
             )
             if not candidates:
@@ -586,7 +586,6 @@ def _run_schedule(
                 target_start_time_str,
                 credentials=credentials,
                 cache_file=cache_file,
-                used_fallback=used_fallback,
                 slot_key=slot_key,
             )
             if not success:

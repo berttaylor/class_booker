@@ -16,18 +16,16 @@ from app.rules import BookingRule, SchedulingRules
 # ---------------------------------------------------------------------------
 
 
-def make_rules_data(names: list[str], allow_fallbacks: bool = True) -> SchedulingRules:
+def make_rules_data(names: list[str]) -> SchedulingRules:
     return SchedulingRules(
         timezone="Europe/Madrid",
         rules=[
             BookingRule(
-                label="midday",
                 enabled=True,
                 weekday="wed",
                 start_time="13:00",
                 slots=1,
                 preferred_teachers=names,
-                allow_fallbacks=allow_fallbacks,
             )
         ],
     )
@@ -163,19 +161,16 @@ class TestValidateRulesAgainstCache:
             timezone="Europe/Madrid",
             rules=[
                 BookingRule(
-                    label="midday",
                     enabled=False,
                     weekday="wed",
                     start_time="13:00",
                     slots=1,
                     preferred_teachers=["Unknown Teacher"],
-                    allow_fallbacks=True,
                 )
             ],
         )
         validate_rules_against_cache(rules, cache)  # disabled rule — should not raise
 
-    def test_empty_preferred_teachers_ok(self):
-        cache = make_cache(("Maria Garcia", 184, "ACTIVE"))
-        rules = make_rules_data([], allow_fallbacks=True)
-        validate_rules_against_cache(rules, cache)  # should not raise
+    def test_empty_preferred_teachers_raises_on_creation(self):
+        with pytest.raises(Exception, match="preferred_teachers"):
+            make_rules_data([])

@@ -50,32 +50,29 @@ credentials:
 
 rules:
   # MONDAY
-  - label: midday
-    weekday: mon
-    enabled: true
+  - weekday: mon
     start_time: "13:00"
+    enabled: true
     slots: 2
     preferred_teachers:
       - "Teacher Name"
       - "Another Teacher"
-    allow_fallbacks: true
 
-  - label: evening
-    weekday: mon
-    enabled: false
+  - weekday: mon
     start_time: "18:00"
+    enabled: false
     slots: 2
-    allow_fallbacks: true
+    preferred_teachers:
+      - "Teacher Name"
 
   # Add more rules following the same pattern.
-  # label:              short name for the rule (e.g. "midday", "evening")
   # weekday:            one of mon, tue, wed, thu, fri, sat, sun
   # enabled:            true/false
   # start_time:         "HH:MM" - must be on the hour or half-hour
   # slots:              1 or 2 consecutive 30-min bookings starting at start_time
-  # preferred_teachers: optional. teacher names in priority order - must match names in data/teachers.json exactly
+  # preferred_teachers: teacher names in priority order - must match names in data/teachers.json exactly
   #                     run `python main.py populate-teachers` to generate data/teachers.json.
-  # allow_fallbacks:    if true, fall back to any available teacher when preferred are unavailable
+  # label (optional):   short name for the rule (e.g. "midday", "evening")
 ```
 
 ## Usage

@@ -102,14 +102,12 @@ PAGE = """
     function addRule() {
       const lines = [
         '',
-        '  - label: new-session',
-        '    enabled: true',
-        '    weekday: mon',
+        '  - weekday: mon',
         '    start_time: "13:00"',
+        '    enabled: true',
         '    slots: 1',
         '    preferred_teachers:',
         '      - ""',
-        '    allow_fallbacks: true',
         '',
       ];
       cm.setValue(cm.getValue().trimEnd() + '\\n' + lines.join('\\n'));
@@ -458,7 +456,7 @@ def save(name: str):
         dupes = sorted({i for i in ids if ids.count(i) > 1})
         return jsonify(
             ok=False,
-            error=f"Two rules share the same day and label: {', '.join(dupes)}. Give them different labels.",
+            error=f"Two rules share the same day and start time: {', '.join(dupes)}. Each rule must have a unique combination.",
         )
 
     # Validate against teacher cache
@@ -517,14 +515,12 @@ def _friendly_error(raw: str) -> str:
         return "Slots must be 1 (30 min) or 2 (1 hour)."
     if "timezone" in r:
         return 'Unknown timezone — use a standard timezone like "Europe/London" or "America/New_York".'
-    if "preferred_teachers" in r and "allow_fallbacks" in r:
-        return (
-            "If allow_fallbacks is false, you must list at least one preferred teacher."
-        )
+    if "preferred_teachers" in r:
+        return "You must list at least one preferred teacher."
     if "credentials" in r:
         return "Missing credentials — add your email and password."
     if "field required" in r or "missing" in r:
-        return "A required field is missing — check each rule has a label, weekday, start_time, slots, and allow_fallbacks."
+        return "A required field is missing — check each rule has a weekday, start_time, slots, and preferred_teachers."
     return "Something doesn't look right — check your rules and try again."
 
 

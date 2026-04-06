@@ -39,14 +39,13 @@ rules:
   # Each rule books one session per week at a fixed day and time.
   # Use the "+ Rule" button in the web editor to add rules, or copy this block.
   #
-  # - label: midday           # short name — must be unique per weekday (e.g. morning, midday, evening)
-  #   enabled: true           # false = skip without deleting
-  #   weekday: mon            # mon, tue, wed, thu, fri, sat, sun
+  # - weekday: mon            # mon, tue, wed, thu, fri, sat, sun
   #   start_time: "13:00"    # on the hour or half-hour, e.g. "09:00", "13:30", "18:00"
+  #   enabled: true           # false = skip without deleting
   #   slots: 1               # 1 = 30 min, 2 = 1 hour
   #   preferred_teachers:    # in priority order — must match names exactly as shown on the platform
   #     - "Teacher Name"
-  #   allow_fallbacks: true  # true = book anyone if preferred teachers are unavailable
+  #   label: midday          # (optional) short name — must be unique per weekday if start_times are same
 TMPL
     echo "✓ Created scheduling_rules/example.yml"
     echo "  → Open the web editor and fill in your credentials and rules"

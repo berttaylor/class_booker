@@ -4,7 +4,7 @@ import pytz
 from datetime import datetime as dt, timedelta
 from pathlib import Path
 from app import logger
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, field_validator
 from typing import List
 
 VALID_WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -15,13 +15,12 @@ BOOKING_PRECHECK_LEAD_SECONDS = 120
 
 
 class BookingRule(BaseModel):
-    label: str
-    enabled: bool
     weekday: str
     start_time: str
+    enabled: bool
+    label: str | None = None
     slots: int
     preferred_teachers: List[str] = []
-    allow_fallbacks: bool
 
     @field_validator("weekday")
     @classmethod
@@ -50,17 +49,17 @@ class BookingRule(BaseModel):
             raise ValueError(f"slots must be 1 or 2, got {v}")
         return v
 
-    @model_validator(mode="after")
-    def validate_teachers_if_no_fallback(self):
-        if not self.allow_fallbacks and not self.preferred_teachers:
-            raise ValueError(
-                f"Rule '{self.weekday}_{self.label}': preferred_teachers cannot be empty when allow_fallbacks is False"
-            )
-        return self
+    @field_validator("preferred_teachers")
+    @classmethod
+    def validate_preferred_teachers(cls, v):
+        if not v:
+            raise ValueError("preferred_teachers cannot be empty")
+        return v
 
     @property
     def id(self) -> str:
-        return f"{self.weekday}_{self.label}"
+        suffix = self.label or self.start_time
+        return f"{self.weekday}_{suffix}"
 
     def slot_times(self) -> List[str]:
         """Returns list of HH:MM start times for each slot."""
