@@ -81,7 +81,7 @@ PAGE = """
     <a class="home" href="/" title="Home">&#8592;</a>
     <div class="header-title">
       <h1>{{ name | capitalize }}</h1>
-      <div id="status">unsaved</div>
+      <div id="status" class="ok">saved</div>
     </div>
     <div class="icon-btns">
       <button class="icon-btn" onclick="adjustFont(1)"><img src="/static/icons/zoom_in.png" height="22" style="filter:invert(1)"></button>
@@ -108,9 +108,13 @@ PAGE = """
       tabSize: 2,
       extraKeys: { "Ctrl-S": save, "Cmd-S": save },
     });
+    let ignoreChange = true;
     cm.setValue({{ content | tojson }});
     cm.setSize('100%', '100%');
-    cm.on('change', () => setStatus('unsaved', ''));
+    ignoreChange = false;
+    cm.on('change', () => {
+      if (!ignoreChange) setStatus('unsaved', '');
+    });
 
     function setStatus(cls, msg) {
       const el = document.getElementById('status');
@@ -207,12 +211,14 @@ PAGE = """
       });
       const data = await resp.json();
       if (data.ok) {
-        setStatus('ok', 'saved');
         if (data.content) {
           const cursor = cm.getCursor();
+          ignoreChange = true;
           cm.setValue(data.content);
           cm.setCursor(cursor);
+          ignoreChange = false;
         }
+        setStatus('ok', 'saved');
       } else {
         setStatus('error', data.error);
       }
