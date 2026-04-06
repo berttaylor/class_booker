@@ -535,4 +535,4 @@ def _load_rules_from_dict(data: dict):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5001)
+    app.run(debug=True, host="0.0.0.0", port=8008)
