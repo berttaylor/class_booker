@@ -2,7 +2,6 @@ import os
 import sys
 import time
 import fcntl
-import random
 import pytz
 from datetime import datetime as dt, timedelta, timezone
 
@@ -280,7 +279,7 @@ def _get_candidates(
     return final_candidates
 
 
-def _wait_for_window(booking_open_dt, now_local, local_tz, client):
+def _wait_for_window(booking_open_dt, now_local, local_tz, client, slot_key=""):
     """
     Blocks until booking_open_dt is reached, printing a live countdown.
     Raises SystemExit on KeyboardInterrupt.
@@ -289,7 +288,10 @@ def _wait_for_window(booking_open_dt, now_local, local_tz, client):
     if wait_seconds <= 0:
         return
 
-    logger.info(f"Waiting... window opens {booking_open_dt.strftime('%H:%M:%S')}")
+    prefix = f"[{slot_key}] " if slot_key else ""
+    logger.info(
+        f"{prefix}Waiting... window opens {booking_open_dt.strftime('%H:%M:%S')}"
+    )
     try:
         while wait_seconds > 0.1:
             hours, remainder = divmod(int(wait_seconds), 3600)
@@ -307,7 +309,7 @@ def _wait_for_window(booking_open_dt, now_local, local_tz, client):
 
     if wait_seconds > 0:
         time.sleep(wait_seconds + 0.1)
-    logger.info("Window open! Booking...")
+    logger.info(f"{prefix}Window open! Booking...")
 
 
 def _refresh_schedule_token(
@@ -342,16 +344,13 @@ def _attempt_booking(
     for cand in candidates:
         tid = str(cand["id"])
         tname = cand["name"]
+        prefix = f"[{slot_key}] " if slot_key else ""
 
         if force_soft:
-            logger.info(f"[DRY RUN] {tname} ({tid}) for {target_slot_iso}")
+            logger.info(f"{prefix}[DRY RUN] {tname} ({tid}) for {target_slot_iso}")
             return True
 
-        delay = random.uniform(BOOKING_DELAY_MIN_SECONDS, BOOKING_DELAY_MAX_SECONDS)
-        logger.info(f"Pre-booking delay: {delay:.1f}s")
-        time.sleep(delay)
-
-        logger.info(f"Attempting: {tname} ({tid})")
+        logger.info(f"{prefix}Attempting: {tname} ({tid})")
 
         for attempt in range(max_retries):
             res = book_lesson(client, tid, target_slot_iso)
@@ -361,14 +360,12 @@ def _attempt_booking(
                 "Unauthorized" in str(res.get("message"))
                 or "401" in str(res.get("message"))
             ):
-                logger.info("Re-auth: token rejected, refreshing...")
+                logger.info(f"{prefix}Re-auth: token rejected, refreshing...")
                 _refresh_schedule_token(client, credentials, cache_file)
                 res = book_lesson(client, tid, target_slot_iso)
 
             if res.get("status") == "success":
-                logger.info(f"BOOKED: {tname} ({tid})")
-                msg = f"Booked {tname} for {target_date_str} at {target_start_time_str}"
-                send_push(msg, priority=-1)
+                logger.info(f"{prefix}BOOKED: {tname} ({tid})")
                 approved_bookings.append(
                     {
                         "staff_id": tid,
@@ -380,7 +377,7 @@ def _attempt_booking(
                 return True
 
             error_msg = str(res.get("message", "unknown error"))
-            logger.error(f"Failed: {tname} ({tid}): {error_msg}")
+            logger.error(f"{prefix}Failed: {tname} ({tid}): {error_msg}")
 
             # If it's the specific Spanish error that happens when we're too early,
             # wait a tiny bit and retry. Otherwise, it's a "real" error, so move
@@ -389,7 +386,7 @@ def _attempt_booking(
                 "excede el límite" in error_msg.lower()
                 or "excede el agendamiento límite" in error_msg.lower()
             ):
-                logger.info(f"Retry {attempt + 1}/{max_retries}...")
+                logger.info(f"{prefix}Retry {attempt + 1}/{max_retries}...")
                 time.sleep(0.5)
                 continue
             else:
@@ -484,9 +481,8 @@ def _run_schedule(
 
         now_utc, drift = get_synced_now(client)
         now_local = now_utc.astimezone(local_tz)
-        drift_icon = "✓" if abs(drift) < 5 else "✗"
         logger.info(
-            f"Auth: {rules_data.credentials.email} {drift_icon} (drift: {drift:+.3f}s)",
+            f"Auth: {rules_data.credentials.email} ✓",
             schedule=schedule_name,
         )
 
@@ -503,12 +499,6 @@ def _run_schedule(
             rule_open_times,
         )
 
-        forced_label = " (forced)" if actual_force else ""
-        logger.info(
-            f"Rules: {', '.join([slot_key for _, slot_key in due_rules])}{forced_label}",
-            schedule=schedule_name,
-        )
-
         bookings = get_bookings(client)
         approved_bookings = [
             b for b in bookings if b.get("status") == "approved" and not b.get("past")
@@ -521,11 +511,6 @@ def _run_schedule(
             target_date_str = target_dt.strftime("%Y-%m-%d")
             target_start_time_str = target_dt.strftime("%H:%M:00")
 
-            logger.info(
-                f"[{slot_key}] {target_date_str} {target_start_time_str}",
-                schedule=schedule_name,
-            )
-
             if _is_already_booked(
                 approved_bookings, target_date_str, target_start_time_str
             ):
@@ -535,17 +520,14 @@ def _run_schedule(
                 continue
 
             available_teachers = get_available_teachers(client, target_slot_iso)
-            available_info = ", ".join(
-                [f"{t['name']} ({t['id']})" for t in available_teachers]
-            )
-            logger.info(f"Available: {available_info}", schedule=schedule_name)
 
             candidates = _get_candidates(
                 rule, available_teachers, approved_bookings, target_date_str, target_dt
             )
             if not candidates:
                 logger.info(
-                    "No suitable teachers available — skipping", schedule=schedule_name
+                    f"[{slot_key}] No suitable teachers available — skipping",
+                    schedule=schedule_name,
                 )
                 send_push(
                     f"[{schedule_name}] No teachers available for {slot_key} on {target_date_str} at {target_start_time_str}",
@@ -553,25 +535,26 @@ def _run_schedule(
                 )
                 continue
 
-            candidate_order = ", ".join(
-                [f"{c['name']} ({c['id']})" for c in candidates]
+            _wait_for_window(
+                booking_open_dt, now_local, local_tz, client, slot_key=slot_key
             )
-            logger.info(f"Candidates: {candidate_order}", schedule=schedule_name)
-
-            _wait_for_window(booking_open_dt, now_local, local_tz, client)
 
             if is_token_expired(
                 client.client.headers.get("Authorization", "").replace("Bearer ", ""),
                 buffer_seconds=60,
             ):
                 logger.info(
-                    "Re-auth: token near-expiry, refreshing...", schedule=schedule_name
+                    f"[{slot_key}] Re-auth: token near-expiry, refreshing...",
+                    schedule=schedule_name,
                 )
                 if _refresh_schedule_token(client, credentials, cache_file):
-                    logger.info("Re-auth: success", schedule=schedule_name)
+                    logger.info(
+                        f"[{slot_key}] Re-auth: success", schedule=schedule_name
+                    )
                 else:
                     logger.error(
-                        "Re-auth: FAILED — booking may fail", schedule=schedule_name
+                        f"[{slot_key}] Re-auth: FAILED — booking may fail",
+                        schedule=schedule_name,
                     )
                     send_push(
                         f"[{schedule_name}] Token refresh failed before booking {slot_key} — booking may fail",
@@ -592,7 +575,7 @@ def _run_schedule(
             )
             if not success:
                 logger.error(
-                    f"FAILED: all teachers exhausted for {slot_key}",
+                    f"[{slot_key}] FAILED: all teachers exhausted",
                     schedule=schedule_name,
                 )
                 send_push(
@@ -600,7 +583,7 @@ def _run_schedule(
                     priority=1,
                 )
 
-        logger.info("Booking process completed.", schedule=schedule_name)
+        # Removed redundant 'Booking process completed' message
 
     finally:
         client.close()
