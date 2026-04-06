@@ -9,6 +9,10 @@ from flask import Flask, abort, request, jsonify, render_template_string
 import json
 from pathlib import Path
 import yaml
+import subprocess
+import plistlib
+from datetime import datetime, timedelta
+
 
 from app.teachers import load_teacher_cache, validate_rules_against_cache
 
@@ -32,6 +36,80 @@ def _extract_header_comments(content: str) -> str:
     if not header:
         return ""
     return "\n".join(header) + "\n"
+
+
+def _get_next_run(label: str) -> str:
+    try:
+        plist_path = BASE_DIR / "runners" / f"{label}.plist"
+        if not plist_path.exists():
+            return ""
+
+        with open(plist_path, "rb") as f:
+            data = plistlib.load(f)
+
+        intervals = data.get("StartCalendarInterval")
+        if not intervals:
+            return ""
+
+        if isinstance(intervals, dict):
+            intervals = [intervals]
+
+        now = datetime.now()
+        next_runs = []
+
+        for interval in intervals:
+            # interval might have Minute, Hour, Day, Month, Weekday
+            minute = interval.get("Minute", 0)
+            hour = interval.get("Hour")
+
+            # Simple logic for Minute/Hour based schedules
+            if hour is None:
+                # Runs every hour at 'minute'
+                run_time = now.replace(minute=minute, second=0, microsecond=0)
+                if run_time <= now:
+                    run_time += timedelta(hours=1)
+                next_runs.append(run_time)
+            else:
+                # Runs every day at 'hour:minute'
+                run_time = now.replace(
+                    hour=hour, minute=minute, second=0, microsecond=0
+                )
+                if run_time <= now:
+                    run_time += timedelta(days=1)
+                next_runs.append(run_time)
+
+        if next_runs:
+            next_run = min(next_runs)
+            return f"next run at {next_run.strftime('%H:%M')}"
+
+        return ""
+    except Exception:
+        return ""
+
+
+def _get_service_status(label: str) -> dict:
+    try:
+        res = subprocess.run(
+            ["launchctl", "list", label], capture_output=True, text=True
+        )
+        if res.returncode != 0:
+            return {"label": label, "status": "Not loaded", "pid": None}
+
+        # Check if it has a PID
+        for line in res.stdout.splitlines():
+            if '"PID"' in line:
+                try:
+                    # Line looks like: "PID" = 43909;
+                    pid_str = line.split("=")[1].strip().rstrip(";")
+                    return {"label": label, "status": "Running", "pid": int(pid_str)}
+                except (IndexError, ValueError):
+                    pass
+
+        next_run_str = _get_next_run(label)
+        status = f"Loaded - {next_run_str}" if next_run_str else "Loaded (Waiting)"
+        return {"label": label, "status": status, "pid": None}
+    except Exception as e:
+        return {"label": label, "status": f"Error: {str(e)}", "pid": None}
 
 
 app = Flask(__name__)
@@ -242,6 +320,12 @@ INDEX_PAGE = """
     h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #aaa; margin-bottom: 12px; }
     section { margin-bottom: 28px; }
     ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .status-card { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; font-size: 13px; color: #888; border-bottom: 1px solid #16213e; }
+    .status-card:last-child { border-bottom: none; }
+    .status-badge { font-size: 10px; font-weight: 600; text-transform: uppercase; padding: 1px 6px; border-radius: 3px; margin-left: 12px; }
+    .status-running { background: #1a4731; color: #4caf82; }
+    .status-stopped { background: #47311a; color: #fbbf24; }
+    .status-not-loaded { background: #333; color: #666; }
     a { display: inline-block; padding: 8px 16px; background: #16213e; border: 1px solid #0f3460; border-radius: 6px; color: #eee; text-decoration: none; font-size: 14px; }
     a:hover { background: #0f3460; }
   </style>
@@ -261,6 +345,19 @@ INDEX_PAGE = """
     <ul>
       {% for name in logs %}
       <li><a href="/logs/{{ name | capitalize }}">{{ name | capitalize }}</a></li>
+      {% endfor %}
+    </ul>
+  </section>
+  <section>
+    <h2>Services</h2>
+    <ul>
+      {% for s in services %}
+      <li class="status-card">
+        <span>{{ s.label }} {% if s.pid %}<small style="color:#444; margin-left: 8px;">(PID: {{ s.pid }})</small>{% endif %}</span>
+        <span class="status-badge {% if s.status == 'Running' %}status-running{% elif s.status == 'Not loaded' %}status-not-loaded{% else %}status-stopped{% endif %}">
+          {{ s.status }}
+        </span>
+      </li>
       {% endfor %}
     </ul>
   </section>
@@ -440,7 +537,17 @@ def index():
     )
     logs = sorted(list(set(p.stem for p in logs_files)))
 
-    return render_template_string(INDEX_PAGE, schedules=schedules, logs=logs)
+    # Service status
+    labels = [
+        "com.berttaylor.class_booker",
+        "com.berttaylor.class_booker.teachers",
+        "com.berttaylor.class_booker.web",
+    ]
+    services = [_get_service_status(label) for label in labels]
+
+    return render_template_string(
+        INDEX_PAGE, schedules=schedules, logs=logs, services=services
+    )
 
 
 def _validate_name(name: str):
