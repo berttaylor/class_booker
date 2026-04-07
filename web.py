@@ -5,6 +5,7 @@ Then open http://localhost:8008/schedules/bert in your browser.
 """
 
 import re
+import socket
 from flask import Flask, abort, request, jsonify, render_template_string
 import json
 from pathlib import Path
@@ -110,6 +111,70 @@ def _get_service_status(label: str) -> dict:
         return {"label": label, "status": status, "pid": None}
     except Exception as e:
         return {"label": label, "status": f"Error: {str(e)}", "pid": None}
+
+
+def _check_internet_access() -> bool:
+    try:
+        # Check connectivity to Google's public DNS
+        socket.create_connection(("8.8.8.8", 53), timeout=2)
+        return True
+    except (OSError, socket.timeout):
+        return False
+
+
+def _get_network_connection() -> dict:
+    try:
+        # Find the active interface for the default route
+        res = subprocess.run(
+            ["/sbin/route", "-n", "get", "default"], capture_output=True, text=True
+        )
+        interface = ""
+        for line in res.stdout.splitlines():
+            if "interface:" in line:
+                interface = line.split(":")[1].strip()
+                break
+
+        if not interface:
+            return {"active": False, "type": "None", "name": "No connection"}
+
+        # Determine if it's Wi-Fi or Ethernet
+        hw_res = subprocess.run(
+            ["/usr/sbin/networksetup", "-listallhardwareports"],
+            capture_output=True,
+            text=True,
+        )
+        hw_type = "Ethernet"
+        current_port = ""
+        for line in hw_res.stdout.splitlines():
+            if "Hardware Port:" in line:
+                current_port = line.split(":")[1].strip()
+            elif f"Device: {interface}" in line:
+                hw_type = (
+                    "Wi-Fi"
+                    if "Wi-Fi" in current_port or "AirPort" in current_port
+                    else "Ethernet"
+                )
+                break
+
+        # Get name (SSID if Wi-Fi)
+        conn_name = interface
+        if hw_type == "Wi-Fi":
+            wifi_res = subprocess.run(
+                ["/usr/sbin/networksetup", "-getairportnetwork", interface],
+                capture_output=True,
+                text=True,
+            )
+            if "Current Wi-Fi Network:" in wifi_res.stdout:
+                conn_name = wifi_res.stdout.split(":")[1].strip()
+
+        return {
+            "active": True,
+            "type": hw_type,
+            "name": conn_name,
+            "interface": interface,
+        }
+    except Exception:
+        return {"active": False, "type": "Error", "name": "Check failed"}
 
 
 app = Flask(__name__)
@@ -349,6 +414,23 @@ INDEX_PAGE = """
     </ul>
   </section>
   <section>
+    <h2>System Status</h2>
+    <ul>
+      <li class="status-card">
+        <span>Internet Access</span>
+        <span class="status-badge {% if system.internet %}status-running{% else %}status-stopped{% endif %}">
+          {% if system.internet %}Online{% else %}Offline{% endif %}
+        </span>
+      </li>
+      <li class="status-card">
+        <span>Network Connection</span>
+        <span style="font-size: 11px; color: #666; margin-left: auto;">
+          {{ system.connection.type }} ({{ system.connection.name }})
+        </span>
+      </li>
+    </ul>
+  </section>
+  <section>
     <h2>Services</h2>
     <ul>
       {% for s in services %}
@@ -545,8 +627,17 @@ def index():
     ]
     services = [_get_service_status(label) for label in labels]
 
+    system_status = {
+        "internet": _check_internet_access(),
+        "connection": _get_network_connection(),
+    }
+
     return render_template_string(
-        INDEX_PAGE, schedules=schedules, logs=logs, services=services
+        INDEX_PAGE,
+        schedules=schedules,
+        logs=logs,
+        services=services,
+        system=system_status,
     )
 
 

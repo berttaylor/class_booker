@@ -157,6 +157,8 @@ cat > "$RUNNERS_DIR/$PLIST_WEB.plist" <<EOF
 
     <key>ProgramArguments</key>
     <array>
+        <string>/usr/bin/caffeinate</string>
+        <string>-ims</string>
         <string>$SCRIPT_DIR/.venv/bin/python3</string>
         <string>$SCRIPT_DIR/web.py</string>
     </array>
