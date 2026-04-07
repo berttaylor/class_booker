@@ -129,7 +129,7 @@ def _evaluate_rules(rules_data, now_local):
                     booking_open_dt.replace(tzinfo=None)
                 )
 
-                if booking_open_dt < now_local:
+                if booking_open_dt < now_local - timedelta(minutes=5):
                     continue
 
                 found_occurrence = True
@@ -139,7 +139,7 @@ def _evaluate_rules(rules_data, now_local):
                 all_upcoming_rules.append((booking_open_dt, rule, lesson_dt))
 
                 diff = (booking_open_dt - now_local).total_seconds()
-                if 0 <= diff <= BOOKING_PRECHECK_LEAD_SECONDS:
+                if diff <= BOOKING_PRECHECK_LEAD_SECONDS:
                     due_rules.append((rule, slot_key))
                     rule_lesson_times[slot_key] = lesson_dt.isoformat()
                     rule_open_times[slot_key] = booking_open_dt

@@ -289,6 +289,50 @@ class TestRuleEvaluation:
 
         assert abs((actual_utc_fixed - expected_utc).total_seconds()) < 1.0
 
+    def test_rule_due_recently_opened_window(self, capsys):
+        """
+        If booking window opened 60s ago (within 5 min grace period), rule is still due.
+
+        Lesson: Wednesday 2026-04-15 13:00 Madrid
+        booking_open_dt = 2026-04-08 12:30 Madrid = 2026-04-08 10:30 UTC
+
+        Freeze at 10:31:00 UTC (60s AFTER 10:30:00)
+        """
+        rules = make_rules(
+            weekday="wed",
+            start_time="13:00",
+            preferred_teachers=["Maria Garcia"],
+        )
+        available = [make_available("184", "Maria Garcia")]
+
+        book_fn = run_due_with_mocks(
+            frozen_time="2026-04-08T10:31:00+00:00",
+            rules=rules,
+            available_teachers=available,
+        )
+        assert book_fn.called
+
+    def test_rule_not_due_long_ago_opened_window(self, capsys):
+        """
+        If booking window opened 6 minutes ago (> 5 min grace period), rule is NOT due.
+
+        booking_open_dt = 2026-04-08 10:30:00 UTC
+        Freeze at 10:36:00 UTC (6 minutes after)
+        """
+        rules = make_rules(
+            weekday="wed",
+            start_time="13:00",
+            preferred_teachers=["Maria Garcia"],
+        )
+        available = [make_available("184", "Maria Garcia")]
+
+        book_fn = run_due_with_mocks(
+            frozen_time="2026-04-08T10:36:00+00:00",
+            rules=rules,
+            available_teachers=available,
+        )
+        assert not book_fn.called
+
 
 # ---------------------------------------------------------------------------
 # Candidate selection
