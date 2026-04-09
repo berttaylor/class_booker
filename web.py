@@ -21,11 +21,11 @@ from app.teachers import load_teacher_cache, validate_rules_against_cache
 BASE_DIR = Path(__file__).parent
 NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
-SERVICE_LABELS = [
-    "com.berttaylor.class_booker",
-    "com.berttaylor.class_booker.teachers",
-    "com.berttaylor.class_booker.web",
-]
+SERVICE_LABELS = {
+    "com.berttaylor.class_booker.web": "Web Server",
+    "com.berttaylor.class_booker": "Class Scheduler",
+    "com.berttaylor.class_booker.teachers": "Teacher Sync",
+}
 
 
 class IndentDumper(yaml.SafeDumper):
@@ -96,12 +96,18 @@ def _get_next_run(label: str) -> str:
 
 
 def _get_service_status(label: str) -> dict:
+    friendly_name = SERVICE_LABELS.get(label, label)
     try:
         res = subprocess.run(
             ["launchctl", "list", label], capture_output=True, text=True
         )
         if res.returncode != 0:
-            return {"label": label, "status": "Not loaded", "pid": None}
+            return {
+                "label": label,
+                "name": friendly_name,
+                "status": "Not loaded",
+                "pid": None,
+            }
 
         # Check if it has a PID
         for line in res.stdout.splitlines():
@@ -109,15 +115,30 @@ def _get_service_status(label: str) -> dict:
                 try:
                     # Line looks like: "PID" = 43909;
                     pid_str = line.split("=")[1].strip().rstrip(";")
-                    return {"label": label, "status": "Running", "pid": int(pid_str)}
+                    return {
+                        "label": label,
+                        "name": friendly_name,
+                        "status": "Running",
+                        "pid": int(pid_str),
+                    }
                 except (IndexError, ValueError):
                     pass
 
         next_run_str = _get_next_run(label)
-        status = f"Loaded - {next_run_str}" if next_run_str else "Loaded (Waiting)"
-        return {"label": label, "status": status, "pid": None}
+        status = f"{next_run_str}" if next_run_str else "Loaded (Waiting)"
+        return {
+            "label": label,
+            "name": friendly_name,
+            "status": status,
+            "pid": None,
+        }
     except Exception as e:
-        return {"label": label, "status": f"Error: {str(e)}", "pid": None}
+        return {
+            "label": label,
+            "name": friendly_name,
+            "status": f"Error: {str(e)}",
+            "pid": None,
+        }
 
 
 def _check_internet_access() -> bool:

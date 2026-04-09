@@ -61,7 +61,7 @@
     <ul id="services-list">
       {% for s in services %}
       <li class="status-card" data-label="{{ s.label }}">
-        <span>{{ s.label }} <span class="pid-info">{% if s.pid %}<small style="color:#444; margin-left: 8px;">(PID: {{ s.pid }})</small>{% endif %}</span></span>
+        <span>{{ s.name }} <span class="pid-info">{% if s.pid %}<small style="color:#444; margin-left: 8px;">(PID: {{ s.pid }})</small>{% endif %}</span></span>
         <span class="status-badge {% if s.status == 'Running' %}status-running{% elif s.status == 'Not loaded' %}status-not-loaded{% else %}status-stopped{% endif %}">
           {{ s.status }}
         </span>
@@ -92,9 +92,9 @@
         data.services.forEach(s => {
           const li = servicesList.querySelector(`li[data-label="${s.label}"]`);
           if (li) {
-            const pidInfo = li.querySelector('.pid-info');
-            if (pidInfo) {
-              pidInfo.innerHTML = s.pid ? `<small style="color:#444; margin-left: 8px;">(PID: ${s.pid})</small>` : '';
+            const nameSpan = li.querySelector('span:first-child');
+            if (nameSpan) {
+              nameSpan.innerHTML = `${s.name} <span class="pid-info">${s.pid ? `<small style="color:#444; margin-left: 8px;">(PID: ${s.pid})</small>` : ''}</span>`;
             }
             const badge = li.querySelector('.status-badge');
             if (badge) {
