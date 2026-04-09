@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Schedule Editor</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/yaml/yaml.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #eee; height: 100vh; display: flex; flex-direction: column; }
+    header { padding: 12px 16px; background: #16213e; border-bottom: 1px solid #0f3460; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .header-title { flex: 1; min-width: 200px; }
+    .header-title h1 { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #status { font-size: 11px; color: #666; margin-top: 2px; }
+    #status.ok { color: #4caf82; }
+    #status.error { color: #f87171; }
+    .icon-btns { display: flex; border: 1px solid #1a5a8a; border-radius: 6px; overflow: hidden; flex-shrink: 0; }
+    .icon-btn { padding: 7px 11px; background: #0f3460; border: none; color: #eee; cursor: pointer; font-size: 15px; line-height: 1; white-space: nowrap; }
+    .icon-btn:hover { background: #1a5a8a; }
+    .icon-btn + .icon-btn { border-left: 1px solid #1a5a8a; }
+    button.save { padding: 8px 18px; background: #1a4731; border: 1px solid #2d6a4f; color: #4caf82; border-radius: 6px; cursor: pointer; font-size: 14px; white-space: nowrap; font-weight: 600; flex-shrink: 0; }
+    button.save:hover { background: #2d6a4f; }
+    a.home { color: #aaa; font-size: 20px; text-decoration: none; flex-shrink: 0; line-height: 1; }
+    a.home:hover { color: #eee; }
+    .CodeMirror { flex: 1; height: 100%; font-size: 14px; line-height: 1.6; }
+    #editor-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+    #picker { display: none; position: absolute; top: 0; right: 0; bottom: 0; width: 240px; background: #16213e; border-left: 1px solid #0f3460; z-index: 10; flex-direction: column; }
+    #picker.open { display: flex; }
+    #picker-search { padding: 10px 12px; background: #0f3460; border: none; border-bottom: 1px solid #1a5a8a; color: #eee; font-size: 14px; outline: none; }
+    #picker-search::placeholder { color: #666; }
+    #picker-list { flex: 1; overflow-y: auto; }
+    .picker-item { padding: 10px 14px; font-size: 13px; cursor: pointer; border-bottom: 1px solid #0f3460; }
+    .picker-item:hover { background: #0f3460; }
+    #picker-copied { padding: 12px 14px; text-align: center; font-size: 13px; color: #4caf82; display: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <a class="home" href="/" title="Home">&#8592;</a>
+    <div class="header-title">
+      <h1>{{ name | capitalize }}</h1>
+      <div id="status" class="ok">saved</div>
+    </div>
+    <div class="icon-btns">
+      <button class="icon-btn" onclick="adjustFont(1)"><img src="/static/icons/zoom_in.png" height="22" style="filter:invert(1)"></button>
+      <button class="icon-btn" onclick="adjustFont(-1)"><img src="/static/icons/zoom_out.png" height="22" style="filter:invert(1)"></button>
+      <button class="icon-btn" onclick="addRule()"><img src="/static/icons/add_rule.webp" height="24" style="filter:invert(1);margin:-3px"></button>
+      <button class="icon-btn" onclick="togglePicker()"><img src="/static/icons/teachers.png" height="24" style="filter:invert(1);margin:-3px"></button>
+    </div>
+    <button class="save" onclick="save()">Save</button>
+  </header>
+  <div id="editor-wrap">
+    <textarea id="editor"></textarea>
+    <div id="picker">
+      <input id="picker-search" type="text" placeholder="Search teachers..." oninput="filterPicker(this.value)">
+      <div id="picker-copied">Copied!</div>
+      <div id="picker-list"></div>
+    </div>
+  </div>
+  <script>
+    const cm = CodeMirror.fromTextArea(document.getElementById('editor'), {
+      mode: 'yaml',
+      theme: 'material-darker',
+      lineNumbers: true,
+      indentWithTabs: false,
+      tabSize: 2,
+      extraKeys: { "Ctrl-S": save, "Cmd-S": save },
+    });
+    let ignoreChange = true;
+    cm.setValue({{ content | tojson }});
+    cm.setSize('100%', '100%');
+    ignoreChange = false;
+    cm.on('change', () => {
+      if (!ignoreChange) setStatus('unsaved', '');
+    });
+
+    function setStatus(cls, msg) {
+      const el = document.getElementById('status');
+      el.className = cls;
+      el.textContent = msg || 'unsaved';
+    }
+
+    function addRule() {
+      const lines = [
+        '',
+        '  - weekday: mon',
+        '    start_time: "13:00"',
+        '    enabled: true',
+        '    slots: 1',
+        '    preferred_teachers:',
+        '      - ""',
+        '',
+      ];
+      cm.setValue(cm.getValue().trimEnd() + '\\n' + lines.join('\\n'));
+      cm.scrollIntoView({ line: cm.lineCount() - 1, ch: 0 });
+    }
+
+    let allTeachers = [];
+    fetch('/api/teachers').then(r => r.json()).then(names => { allTeachers = names; });
+
+    function togglePicker() {
+      const picker = document.getElementById('picker');
+      if (picker.classList.contains('open')) {
+        picker.classList.remove('open');
+      } else {
+        renderPicker(allTeachers);
+        picker.classList.add('open');
+        document.getElementById('picker-search').value = '';
+        document.getElementById('picker-search').focus();
+      }
+    }
+
+    function filterPicker(q) {
+      const filtered = allTeachers.filter(n => n.toLowerCase().includes(q.toLowerCase()));
+      renderPicker(filtered);
+    }
+
+    function renderPicker(names) {
+      const list = document.getElementById('picker-list');
+      list.innerHTML = '';
+      names.forEach(n => {
+        const el = document.createElement('div');
+        el.className = 'picker-item';
+        el.textContent = n;
+        el.addEventListener('click', () => insertTeacher(n));
+        list.appendChild(el);
+      });
+    }
+
+    function insertTeacher(name) {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(name);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = name;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      const copied = document.getElementById('picker-copied');
+      document.getElementById('picker-search').style.display = 'none';
+      document.getElementById('picker-list').style.display = 'none';
+      copied.style.display = 'block';
+      setTimeout(() => {
+        copied.style.display = 'none';
+        document.getElementById('picker-search').style.display = '';
+        document.getElementById('picker-list').style.display = '';
+        document.getElementById('picker').classList.remove('open');
+      }, 400);
+    }
+
+    let fontSize = 14;
+    function adjustFont(delta) {
+      fontSize = Math.max(8, Math.min(32, fontSize + delta));
+      cm.getWrapperElement().style.fontSize = fontSize + 'px';
+      cm.refresh();
+    }
+
+    async function save() {
+      setStatus('', 'saving...');
+      const resp = await fetch('/schedules/{{ name }}/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: cm.getValue() }),
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        if (data.content) {
+          const cursor = cm.getCursor();
+          ignoreChange = true;
+          cm.setValue(data.content);
+          cm.setCursor(cursor);
+          ignoreChange = false;
+        }
+        setStatus('ok', 'saved');
+      } else {
+        setStatus('error', data.error);
+      }
+    }
+  </script>
+</body>
+</html>

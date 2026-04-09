@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Class Booker</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #eee; padding: 40px; }
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 32px; }
+    h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #aaa; margin-bottom: 12px; }
+    section { margin-bottom: 28px; }
+    ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .status-card { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; font-size: 13px; color: #888; border-bottom: 1px solid #16213e; }
+    .status-card:last-child { border-bottom: none; }
+    .status-badge { font-size: 10px; font-weight: 600; text-transform: uppercase; padding: 1px 6px; border-radius: 3px; margin-left: 12px; }
+    .status-running { background: #1a4731; color: #4caf82; }
+    .status-stopped { background: #47311a; color: #fbbf24; }
+    .status-not-loaded { background: #333; color: #666; }
+    a { display: inline-block; padding: 8px 16px; background: #16213e; border: 1px solid #0f3460; border-radius: 6px; color: #eee; text-decoration: none; font-size: 14px; }
+    a:hover { background: #0f3460; }
+  </style>
+</head>
+<body>
+  <h1>Class Booker</h1>
+  <section>
+    <h2>Schedules</h2>
+    <ul>
+      {% for name in schedules %}
+      <li><a href="/schedules/{{ name | capitalize }}">{{ name | capitalize }}</a></li>
+      {% endfor %}
+    </ul>
+  </section>
+  <section>
+    <h2>Logs</h2>
+    <ul>
+      {% for name in logs %}
+      <li><a href="/logs/{{ name | capitalize }}">{{ name | capitalize }}</a></li>
+      {% endfor %}
+    </ul>
+  </section>
+  <section>
+    <h2>System Status</h2>
+    <ul>
+      <li class="status-card">
+        <span>Internet Access</span>
+        <span id="internet-badge" class="status-badge {% if system.internet %}status-running{% else %}status-stopped{% endif %}">
+          {% if system.internet %}Online{% else %}Offline{% endif %}
+        </span>
+      </li>
+      <li class="status-card">
+        <span>Network Connection</span>
+        <span id="connection-info" style="font-size: 11px; color: #666; margin-left: auto;">
+          {{ system.connection.type }} ({{ system.connection.name }})
+        </span>
+      </li>
+    </ul>
+  </section>
+  <section>
+    <h2>Services</h2>
+    <ul id="services-list">
+      {% for s in services %}
+      <li class="status-card" data-label="{{ s.label }}">
+        <span>{{ s.label }} <span class="pid-info">{% if s.pid %}<small style="color:#444; margin-left: 8px;">(PID: {{ s.pid }})</small>{% endif %}</span></span>
+        <span class="status-badge {% if s.status == 'Running' %}status-running{% elif s.status == 'Not loaded' %}status-not-loaded{% else %}status-stopped{% endif %}">
+          {{ s.status }}
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  <script>
+    let source = null;
+
+    function updateStatusUI(data) {
+      // Update Internet Access
+      const internetBadge = document.getElementById('internet-badge');
+      if (internetBadge) {
+        internetBadge.textContent = data.system.internet ? 'Online' : 'Offline';
+        internetBadge.className = 'status-badge ' + (data.system.internet ? 'status-running' : 'status-stopped');
+      }
+
+      // Update Connection Info
+      const connectionInfo = document.getElementById('connection-info');
+      if (connectionInfo) {
+        connectionInfo.textContent = `${data.system.connection.type} (${data.system.connection.name})`;
+      }
+
+      // Update Services
+      const servicesList = document.getElementById('services-list');
+      if (servicesList && data.services) {
+        data.services.forEach(s => {
+          const li = servicesList.querySelector(`li[data-label="${s.label}"]`);
+          if (li) {
+            const pidInfo = li.querySelector('.pid-info');
+            if (pidInfo) {
+              pidInfo.innerHTML = s.pid ? `<small style="color:#444; margin-left: 8px;">(PID: ${s.pid})</small>` : '';
+            }
+            const badge = li.querySelector('.status-badge');
+            if (badge) {
+              badge.textContent = s.status;
+              let cls = 'status-badge ';
+              if (s.status === 'Running') cls += 'status-running';
+              else if (s.status === 'Not loaded') cls += 'status-not-loaded';
+              else cls += 'status-stopped';
+              badge.className = cls;
+            }
+          }
+        });
+      }
+    }
+
+    function connect() {
+      if (source) return;
+      source = new EventSource("/api/status/stream");
+      source.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          updateStatusUI(data);
+        } catch (err) {
+          console.error("Error parsing status update:", err);
+        }
+      };
+      source.onerror = (e) => {
+        disconnect();
+        setTimeout(connect, 5000);
+      };
+    }
+
+    function disconnect() {
+      if (source) {
+        source.close();
+        source = null;
+      }
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        disconnect();
+      } else {
+        connect();
+      }
+    });
+
+    // Initial connect
+    connect();
+  </script>
+</body>
+</html>
