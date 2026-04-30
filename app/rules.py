@@ -82,11 +82,31 @@ class ScheduleCredentials(BaseModel):
 class SchedulingRules(BaseModel):
     timezone: str
     rules: List[BookingRule] = []
+    holidays: List[str] = []
 
     @field_validator("rules", mode="before")
     @classmethod
     def coerce_none_to_empty(cls, v):
         return v or []
+
+    @field_validator("holidays", mode="before")
+    @classmethod
+    def coerce_holidays_none_to_empty(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return [str(item) for item in v]
+        return v
+
+    @field_validator("holidays")
+    @classmethod
+    def validate_holidays(cls, v):
+        for date_str in v:
+            try:
+                dt.strptime(date_str, "%Y-%m-%d")
+            except ValueError:
+                raise ValueError(f"Holiday '{date_str}' must be in YYYY-MM-DD format")
+        return v
 
     settings: ScheduleSettings = ScheduleSettings()
     credentials: ScheduleCredentials | None = None

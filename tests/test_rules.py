@@ -317,6 +317,30 @@ class TestLoadActiveSchedules:
         assert rules.credentials.email == "a@b.com"
 
 
+class TestHolidays:
+    def test_valid_holiday_format(self):
+        rules = SchedulingRules(timezone="Europe/Madrid", holidays=["2024-12-25"])
+        assert rules.holidays == ["2024-12-25"]
+
+    def test_invalid_holiday_format_raises(self):
+        with pytest.raises(ValueError, match="must be in YYYY-MM-DD format"):
+            SchedulingRules(timezone="Europe/Madrid", holidays=["2024/12/25"])
+
+    def test_coerce_none_holidays(self):
+        rules = SchedulingRules(timezone="Europe/Madrid", holidays=None)
+        assert rules.holidays == []
+
+    def test_holidays_parsed_from_yaml(self, tmp_path):
+        yml = tmp_path / "test.yml"
+        yml.write_text(
+            "timezone: Europe/Madrid\n"
+            "holidays:\n  - 2024-12-25\n  - 2025-01-01\n"
+            "rules: []\n"
+        )
+        rules = load_scheduling_rules(str(yml))
+        assert rules.holidays == ["2024-12-25", "2025-01-01"]
+
+
 class TestSortRules:
     def test_sort_rules_by_day_and_time(self):
         data = {

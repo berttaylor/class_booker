@@ -339,6 +339,48 @@ class TestRuleEvaluation:
 # ---------------------------------------------------------------------------
 
 
+class TestHolidays:
+    def test_holiday_skips_rule(self, capsys):
+        # Wed May 6, 2026 12:59:00
+        # This is 2 minutes before Wed May 13 13:00 booking window opens (7 days + 30m offset)
+        # 13:00 - 30m = 12:30. 7 days before is Wed May 6 12:30.
+        # At 12:59, it IS within the 2 minute precheck window (lead time is 120s).
+
+        frozen_time = "2026-05-06 12:59:00"
+        rules = make_rules(weekday="wed", start_time="13:00")
+        # Add May 13 as a holiday
+        rules.holidays = ["2026-05-13"]
+
+        # Run without holiday - should be due
+        from app.services.scheduler import _evaluate_rules
+        import pytz
+        from datetime import datetime as dt
+
+        local_tz = pytz.timezone(rules.timezone)
+        now_local = local_tz.localize(dt.strptime(frozen_time, "%Y-%m-%d %H:%M:%S"))
+
+        due_rules, _, _, _ = _evaluate_rules(rules, now_local)
+        assert len(due_rules) == 0, "Should have skipped because of holiday"
+
+    def test_upcoming_skips_holiday(self):
+        frozen_time = "2026-05-06 12:00:00"
+        rules = make_rules(weekday="wed", start_time="13:00")
+        rules.holidays = ["2026-05-13"]
+
+        from app.services.scheduler import _evaluate_rules
+        import pytz
+        from datetime import datetime as dt
+
+        local_tz = pytz.timezone(rules.timezone)
+        now_local = local_tz.localize(dt.strptime(frozen_time, "%Y-%m-%d %H:%M:%S"))
+
+        _, _, _, upcoming = _evaluate_rules(rules, now_local)
+        # It should skip May 13 and find May 20
+        assert len(upcoming) > 0
+        next_open, next_rule, next_lesson = upcoming[0]
+        assert next_lesson.date().isoformat() == "2026-05-20"
+
+
 class TestCandidateSelection:
     def test_preferred_teacher_selected_first(self):
         """Teacher 184 is first in teacher_ids and available → books 184, not 159."""

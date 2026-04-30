@@ -47,8 +47,9 @@
     <div class="icon-btns">
       <button class="icon-btn" onclick="adjustFont(1)"><img src="/static/icons/zoom_in.png" height="22" style="filter:invert(1)"></button>
       <button class="icon-btn" onclick="adjustFont(-1)"><img src="/static/icons/zoom_out.png" height="22" style="filter:invert(1)"></button>
-      <button class="icon-btn" onclick="addRule()"><img src="/static/icons/add_rule.webp" height="24" style="filter:invert(1);margin:-3px"></button>
-      <button class="icon-btn" onclick="togglePicker()"><img src="/static/icons/teachers.png" height="24" style="filter:invert(1);margin:-3px"></button>
+      <button class="icon-btn" onclick="addRule()" title="Add Rule"><img src="/static/icons/add_rule.webp" height="24" style="filter:invert(1);margin:-3px"></button>
+      <button class="icon-btn" onclick="addHoliday()" title="Add Holiday" style="font-size: 20px; line-height: 24px;">🏖️</button>
+      <button class="icon-btn" onclick="togglePicker()" title="Teacher Picker"><img src="/static/icons/teachers.png" height="24" style="filter:invert(1);margin:-3px"></button>
     </div>
     <button class="save" onclick="save()">Save</button>
   </header>
@@ -94,7 +95,19 @@
         '      - ""',
         '',
       ];
-      cm.setValue(cm.getValue().trimEnd() + '\\n' + lines.join('\\n'));
+      cm.setValue(cm.getValue().trimEnd() + '\n' + lines.join('\n'));
+      cm.scrollIntoView({ line: cm.lineCount() - 1, ch: 0 });
+    }
+
+    function addHoliday() {
+      let val = cm.getValue();
+      const today = new Date().toISOString().split('T')[0];
+      if (!val.includes('holidays:')) {
+        val = val.trimEnd() + '\n\nholidays:\n  - ' + today + '\n';
+      } else {
+        val = val.replace(/holidays:\s*/, 'holidays:\n  - ' + today + '\n  ');
+      }
+      cm.setValue(val);
       cm.scrollIntoView({ line: cm.lineCount() - 1, ch: 0 });
     }
 

@@ -113,6 +113,9 @@ def _evaluate_rules(rules_data, now_local):
         found_occurrence = False
         for days_ahead in range(15):
             target_date = (now_local + timedelta(days=days_ahead)).date()
+            if target_date.isoformat() in rules_data.holidays:
+                continue
+
             weekday_str = target_date.strftime("%a").lower()
             if weekday_str != rule.weekday:
                 continue
