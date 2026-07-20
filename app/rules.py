@@ -10,8 +10,8 @@ from typing import List
 VALID_WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 BOOKING_OPEN_OFFSET_DAYS = 7
-BOOKING_OPEN_OFFSET_MINUTES = 30
-BOOKING_PRECHECK_LEAD_SECONDS = 120
+BOOKING_OPEN_OFFSET_MINUTES = 29
+BOOKING_PRECHECK_LEAD_SECONDS = 180
 
 
 class BookingRule(BaseModel):
