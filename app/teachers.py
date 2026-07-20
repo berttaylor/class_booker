@@ -39,23 +39,26 @@ def populate_teachers(client: BookingClient) -> None:
     cache = load_teacher_cache()
     teachers = cache.get("teachers", {})
 
-    # Build set of names returned by the API
-    api_names = {data["name"] for data in tutor_map.values()}
-
-    # Mark existing entries ACTIVE or REMOVED based on API response
-    for name in teachers:
-        teachers[name]["status"] = "ACTIVE" if name in api_names else "REMOVED"
-
-    # Add new teachers from the API
-    for data in tutor_map.values():
+    # Collapse the API response to name -> id. Duplicate names exist across the
+    # old/new id namespaces (see get_tutors_map); keep the larger id, which is
+    # the new booking/calendar namespace.
+    api_ids: dict[str, int] = {}
+    for tid, data in tutor_map.items():
         name = data["name"]
+        api_ids[name] = max(api_ids.get(name, 0), int(tid))
+
+    # Refresh id + status for every cached name, then add new ones. The id is
+    # always overwritten so a namespace change on the platform self-heals.
+    for name in teachers:
+        if name in api_ids:
+            teachers[name]["id"] = api_ids[name]
+            teachers[name]["status"] = "ACTIVE"
+        else:
+            teachers[name]["status"] = "REMOVED"
+
+    for name, tid in api_ids.items():
         if name not in teachers:
-            teachers[name] = {
-                "id": int(
-                    next(tid for tid, d in tutor_map.items() if d["name"] == name)
-                ),
-                "status": "ACTIVE",
-            }
+            teachers[name] = {"id": tid, "status": "ACTIVE"}
 
     cache["teachers"] = teachers
     save_teacher_cache(cache)

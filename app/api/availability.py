@@ -12,6 +12,11 @@ from app.utils import normalize_datetime
 def get_tutors_map(client: BookingClient) -> Dict[str, Dict[str, Any]]:
     """
     Fetches the list of tutors and returns a mapping of ID to its data (name).
+
+    Uses /auth/tutors (not /auth/tutors/list): as of 2026-07 the platform's
+    booking/calendar endpoint keys availability by the id returned here, which
+    is a different namespace from /auth/tutors/list. Booking (staff_id) and
+    availability both use this id, so the cache must store it.
     """
     response = client.get(app_config.tutors_list_endpoint)
     if response.status_code != 200:
@@ -19,7 +24,7 @@ def get_tutors_map(client: BookingClient) -> Dict[str, Dict[str, Any]]:
 
     try:
         res_data = response.json()
-        tutors = res_data.get("data", [])
+        tutors = res_data.get("tutors", [])
 
         tutor_map = {}
         for tutor in tutors:

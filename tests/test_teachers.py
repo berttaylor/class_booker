@@ -129,6 +129,23 @@ class TestPopulateTeachers:
         result = self._run(tmp_path, monkeypatch, tutor_map, existing_cache=existing)
         assert result["teachers"]["Carlos Lopez"]["status"] == "ACTIVE"
 
+    def test_refreshes_stale_id_on_namespace_change(self, tmp_path, monkeypatch):
+        # The 2026-07 bug: the platform changed the id namespace. A cached name
+        # must pick up the new id, not keep the old one.
+        existing = make_cache(("Maria Garcia", 184, "ACTIVE"))
+        tutor_map = {"4609": {"name": "Maria Garcia"}}
+        result = self._run(tmp_path, monkeypatch, tutor_map, existing_cache=existing)
+        assert result["teachers"]["Maria Garcia"]["id"] == 4609
+
+    def test_duplicate_name_keeps_larger_id(self, tmp_path, monkeypatch):
+        # Same name under both old and new namespace — keep the new (larger) id.
+        tutor_map = {
+            "184": {"name": "Maria Garcia"},
+            "4609": {"name": "Maria Garcia"},
+        }
+        result = self._run(tmp_path, monkeypatch, tutor_map)
+        assert result["teachers"]["Maria Garcia"]["id"] == 4609
+
 
 # ---------------------------------------------------------------------------
 # validate_rules_against_cache
