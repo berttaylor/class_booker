@@ -39,13 +39,10 @@ def populate_teachers(client: BookingClient) -> None:
     cache = load_teacher_cache()
     teachers = cache.get("teachers", {})
 
-    # Collapse the API response to name -> id. Duplicate names exist across the
-    # old/new id namespaces (see get_tutors_map); keep the larger id, which is
-    # the new booking/calendar namespace.
-    api_ids: dict[str, int] = {}
-    for tid, data in tutor_map.items():
-        name = data["name"]
-        api_ids[name] = max(api_ids.get(name, 0), int(tid))
+    # Collapse the API response to name -> id.
+    api_ids: dict[str, int] = {
+        data["name"]: int(tid) for tid, data in tutor_map.items()
+    }
 
     # Refresh id + status for every cached name, then add new ones. The id is
     # always overwritten so a namespace change on the platform self-heals.

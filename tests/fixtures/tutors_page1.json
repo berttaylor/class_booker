@@ -1,0 +1,64 @@
+{
+  "current_page": 1,
+  "data": [
+    {
+      "id": 4651,
+      "first_name": "Adan",
+      "last_name": "Diaz",
+      "name": "Adan Diaz",
+      "avatar_url": null,
+      "rating": null,
+      "total_classes": 0,
+      "interests_list": [],
+      "user_info": {
+        "bio": null,
+        "country": "Colombia",
+        "nationality": null,
+        "experience_years": 3,
+        "language": null,
+        "intro_video_url": null
+      }
+    },
+    {
+      "id": 4542,
+      "first_name": "Adriana",
+      "last_name": "Reynaud",
+      "name": "Adriana Reynaud",
+      "avatar_url": null,
+      "rating": null,
+      "total_classes": 0,
+      "interests_list": [],
+      "user_info": {
+        "bio": null,
+        "country": "Colombia",
+        "nationality": null,
+        "experience_years": 3,
+        "language": null,
+        "intro_video_url": null
+      }
+    },
+    {
+      "id": 4609,
+      "first_name": "Mc",
+      "last_name": "Quintero",
+      "name": "Mc Quintero",
+      "avatar_url": null,
+      "rating": null,
+      "total_classes": 0,
+      "interests_list": [],
+      "user_info": {
+        "bio": null,
+        "country": "Colombia",
+        "nationality": null,
+        "experience_years": 3,
+        "language": null,
+        "intro_video_url": null
+      }
+    }
+  ],
+  "last_page": 2,
+  "per_page": 3,
+  "total": 5,
+  "next_page_url": "https://api-comunity.worldsacross.com/api/tutors?page=2",
+  "prev_page_url": null
+}

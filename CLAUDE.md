@@ -26,6 +26,15 @@ python main.py <command>
 
 This is a Python CLI tool (Typer) that automates booking Spanish classes on worldsacross.com by calling the platform's backend API directly.
 
+**API:** `api-comunity.worldsacross.com/api` (the backend behind `preview.worldsacross.com`). The platform migrated here from the legacy `api.worldsacross.com` in August 2026 — see the `new-api` branch history for the old endpoints. Notable traits:
+
+- **Booking is two calls:** `POST /booking/favorites/hold-slot` then `POST /booking/favorites/confirm`. Success is HTTP 200; neither returns a `status` field. If the hold succeeds and the confirm fails, the slot stays locked until `expires_at` (~5 min), which blocks retries.
+- **Timezone travels in the `x-timezone` header**, not the request body.
+- **Calendar** (`GET /booking/favorites/calendar`) is keyed by date, covers ~9 days, 30-minute slots, and returns **favourite tutors only**. `get_bookings()` normalises `/students/me/my-classes` back to the flat `staff_id`/`date`/`start_time` shape the scheduler expects, converting UTC to the configured timezone.
+- **No server-time endpoint** — `get_server_time()` reads the HTTP `Date` header off `/students/me/quota` (1-second resolution).
+- **`/tutors` is paginated** (Laravel paginator, ~9 per page); `get_tutors_map()` walks every page.
+- **Confirm sends `focus_type` + `activity_suggestion_id`** from `/students/me/activities`. `get_focus()` picks the top activity once per run and degrades to omitting both if unavailable.
+
 **Module layout:**
 ```
 app/
@@ -83,4 +92,4 @@ When adding HTTP-touching test classes, inherit `BaseTest` and use `self.mock_cl
 
 Scheduler tests patch `sched_module` (imported as `import app.services.scheduler as sched_module`) and must include `patch.object(sched_module, "is_token_expired", return_value=False)` to prevent the post-wait re-auth check from hitting the network.
 
-Test fixtures (`calendar_response`, `tutors_response`, `bookings_response`) are loaded from JSON files in `tests/fixtures/` and injected via `conftest.py`.
+Test fixtures (`calendar_response`, `tutors_page1_response`, `tutors_page2_response`, `my_classes_response`, `activities_response`) are loaded from JSON files in `tests/fixtures/` and injected via `conftest.py`. Most were captured from real API responses.

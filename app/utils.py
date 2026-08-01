@@ -1,4 +1,5 @@
 from datetime import datetime as dt, timezone
+from email.utils import parsedate_to_datetime
 from typing import Dict, Any
 
 from app.client import BookingClient
@@ -20,8 +21,13 @@ def normalize_datetime(dt_str: str) -> str:
 def get_server_time(client: BookingClient) -> Dict[str, Any]:
     """
     Fetches the server time from the backend.
+
+    The API has no time endpoint, so we read the HTTP Date header off a cheap
+    request. That gives 1-second resolution — coarser than a dedicated endpoint,
+    but the caller's half-RTT correction keeps it inside tolerance for the
+    :00/:30 booking race.
     """
-    response = client.get(app_config.server_time_endpoint)
+    response = client.get(app_config.quota_endpoint)
 
     if response.status_code != 200:
         return {
@@ -29,14 +35,16 @@ def get_server_time(client: BookingClient) -> Dict[str, Any]:
             "message": f"HTTP Error {response.status_code}: {response.text}",
         }
 
+    date_header = response.headers.get("Date")
+    if not date_header:
+        return {"status": "error", "message": "No Date header in response"}
+
     try:
-        # Based on the provided curl, we expect a JSON response.
-        # Let's assume it returns a dict with the time or status.
-        return response.json()
+        server_dt = parsedate_to_datetime(date_header).astimezone(timezone.utc)
+        return {"datetime": server_dt.strftime("%Y-%m-%dT%H:%M:%S")}
     except Exception as e:
-        # If it's not JSON, maybe it's a raw string or we failed to parse
         return {
             "status": "error",
-            "message": f"Failed to parse server time: {e}",
-            "raw": response.text,
+            "message": f"Failed to parse Date header: {e}",
+            "raw": date_header,
         }

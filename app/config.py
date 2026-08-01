@@ -11,12 +11,14 @@ class AppConfig(BaseModel):
     base_url: str
     timezone: str
     login_endpoint: str
-    availability_endpoint: str
-    booking_endpoint: str
-    list_bookings_endpoint: str
+    calendar_endpoint: str
+    hold_endpoint: str
+    confirm_endpoint: str
+    my_classes_endpoint: str
     cancel_booking_endpoint: str
-    server_time_endpoint: str
     tutors_list_endpoint: str
+    activities_endpoint: str
+    quota_endpoint: str
 
 
 class Settings(BaseSettings):

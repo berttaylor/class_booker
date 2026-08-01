@@ -1,0 +1,73 @@
+{
+  "data": [
+    {
+      "id": 2718,
+      "source": "COACH",
+      "system_activity_id": null,
+      "title": "Share Embarrassing Moments",
+      "description": "Obj.: Narrar experiencias pasadas y describir emociones utilizando el pret\u00e9rito indefinido.\n\n\u2022 El estudiante escucha el mensaje e identifica qu\u00e9 ocurri\u00f3 y c\u00f3mo se sinti\u00f3 la persona.\n\u2022 Resume la historia utilizando el pret\u00e9rito indefinido y vocabulario relacionado con las emociones.\n\u2022 Finalmente, comparte una experiencia similar y describe c\u00f3mo reaccion\u00f3 y c\u00f3mo se sinti\u00f3.",
+      "activity_type": "conversation_practice",
+      "skills": [
+        "speaking",
+        "listening"
+      ],
+      "action_verb": "Talk about",
+      "grammar_load": 3,
+      "tags": [],
+      "library_resource_id": null,
+      "library_resource_ids": [],
+      "library_resource": null,
+      "library_resources": [],
+      "priority": 0,
+      "confidence_score": 1,
+      "learning_goal": {
+        "id": 312,
+        "title": "Narrate personal and collective experiences using Simple Past with logical sequencing",
+        "description": null
+      },
+      "unit_title": "Expressing past experiences",
+      "coach": {
+        "id": 4469,
+        "name": "Jesus Hernandez"
+      },
+      "status": "pending"
+    },
+    {
+      "id": 2717,
+      "source": "COACH",
+      "system_activity_id": null,
+      "title": "Debate Unpopular Opinions",
+      "description": "Obj.: Expresar y defender opiniones con argumentos, ejemplos y reformulaciones en un debate.\n\n\u2022 El estudiante lee una afirmaci\u00f3n y adopta una postura a favor, en contra o parcialmente de acuerdo.\n\u2022 Defiende sus ideas con argumentos y ejemplos, respondiendo a las preguntas y objeciones del tutor.\n\u2022 Finalmente, reformula sus argumentos cuando sea necesario y reacciona a diferentes perspectivas para sostener su postura.",
+      "activity_type": "conversation_practice",
+      "skills": [
+        "speaking",
+        "listening"
+      ],
+      "action_verb": "Express",
+      "grammar_load": 3,
+      "tags": [],
+      "library_resource_id": null,
+      "library_resource_ids": [],
+      "library_resource": null,
+      "library_resources": [],
+      "priority": 0,
+      "confidence_score": 1,
+      "learning_goal": {
+        "id": 331,
+        "title": "Use formal register appropriately according to context and audience",
+        "description": null
+      },
+      "unit_title": "In my opinion...",
+      "coach": {
+        "id": 4469,
+        "name": "Jesus Hernandez"
+      },
+      "status": "pending"
+    }
+  ],
+  "meta": {
+    "level_name": "Level B1.1 Activities",
+    "total": 8,
+    "completed_count": 0
+  }
+}

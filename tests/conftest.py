@@ -61,14 +61,26 @@ def calendar_response():
 
 
 @pytest.fixture
-def tutors_response():
-    with open(FIXTURES_DIR / "tutors_response.json") as f:
+def tutors_page1_response():
+    with open(FIXTURES_DIR / "tutors_page1.json") as f:
         return json.load(f)
 
 
 @pytest.fixture
-def bookings_response():
-    with open(FIXTURES_DIR / "bookings_response.json") as f:
+def tutors_page2_response():
+    with open(FIXTURES_DIR / "tutors_page2.json") as f:
+        return json.load(f)
+
+
+@pytest.fixture
+def my_classes_response():
+    with open(FIXTURES_DIR / "my_classes_response.json") as f:
+        return json.load(f)
+
+
+@pytest.fixture
+def activities_response():
+    with open(FIXTURES_DIR / "activities_response.json") as f:
         return json.load(f)
 
 

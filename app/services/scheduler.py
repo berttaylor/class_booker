@@ -10,7 +10,7 @@ from pathlib import Path
 from app.api.auth import login, is_token_expired
 from app.notifications import send_push
 from app.api.availability import get_available_teachers
-from app.api.booking import get_bookings, book_lesson
+from app.api.booking import get_bookings, book_lesson, get_focus
 from app.client import BookingClient
 from app.config import app_config
 from app.rules import (
@@ -337,12 +337,14 @@ def _attempt_booking(
     credentials: dict,
     cache_file: Path,
     slot_key="",
+    focus: tuple = (None, None),
 ) -> bool:
     """
     Iterates candidates and attempts to book the lesson.
     Returns True on first success. Mutates approved_bookings on success.
     """
     max_retries = 3
+    focus_type, activity_suggestion_id = focus
 
     for cand in candidates:
         tid = str(cand["id"])
@@ -356,7 +358,9 @@ def _attempt_booking(
         logger.info(f"{prefix}Attempting: {tname} ({tid})")
 
         for attempt in range(max_retries):
-            res = book_lesson(client, tid, target_slot_iso)
+            res = book_lesson(
+                client, tid, target_slot_iso, focus_type, activity_suggestion_id
+            )
 
             # Auth error — refresh token and retry once
             if res.get("status") == "error" and (
@@ -365,7 +369,9 @@ def _attempt_booking(
             ):
                 logger.info(f"{prefix}Re-auth: token rejected, refreshing...")
                 _refresh_schedule_token(client, credentials, cache_file)
-                res = book_lesson(client, tid, target_slot_iso)
+                res = book_lesson(
+                    client, tid, target_slot_iso, focus_type, activity_suggestion_id
+                )
 
             if res.get("status") == "success":
                 logger.info(f"{prefix}BOOKED: {tname} ({tid})")
@@ -507,6 +513,9 @@ def _run_schedule(
             b for b in bookings if b.get("status") == "approved" and not b.get("past")
         ]
 
+        # Fetched once per run, not per attempt — keeps the booking race clean.
+        focus = get_focus(client)
+
         for rule, slot_key in due_rules:
             target_slot_iso = rule_lesson_times[slot_key]
             booking_open_dt = rule_open_times[slot_key]
@@ -575,6 +584,7 @@ def _run_schedule(
                 credentials=credentials,
                 cache_file=cache_file,
                 slot_key=slot_key,
+                focus=focus,
             )
             if not success:
                 logger.error(
