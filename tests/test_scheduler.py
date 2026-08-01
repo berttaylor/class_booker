@@ -441,6 +441,77 @@ class TestCandidateSelection:
 # ---------------------------------------------------------------------------
 
 
+class TestOverlapDetection:
+    """Direct coverage of _is_already_booked's range comparison."""
+
+    @staticmethod
+    def _booking(start, duration=30, date="2026-04-15"):
+        return {
+            "date": date,
+            "start_time": start,
+            "duration_minutes": duration,
+            "status": "approved",
+            "past": False,
+        }
+
+    def test_exact_match_is_booked(self):
+        assert sched_module._is_already_booked(
+            [self._booking("13:00:00")], "2026-04-15", "13:00:00", 30
+        )
+
+    def test_start_inside_existing_60min_class(self):
+        """13:00 rule against a 12:30–13:30 recurring class."""
+        assert sched_module._is_already_booked(
+            [self._booking("12:30:00", 60)], "2026-04-15", "13:00:00", 30
+        )
+
+    def test_60min_rule_ending_inside_existing_class(self):
+        """13:00–14:00 rule against a 13:30 class — overlap at the tail."""
+        assert sched_module._is_already_booked(
+            [self._booking("13:30:00", 30)], "2026-04-15", "13:00:00", 60
+        )
+
+    def test_existing_class_fully_inside_60min_rule(self):
+        assert sched_module._is_already_booked(
+            [self._booking("13:15:00", 15)], "2026-04-15", "13:00:00", 60
+        )
+
+    def test_touching_before_is_not_overlap(self):
+        """Existing 12:00–13:00 does not block a 13:00 start."""
+        assert not sched_module._is_already_booked(
+            [self._booking("12:00:00", 60)], "2026-04-15", "13:00:00", 30
+        )
+
+    def test_touching_after_is_not_overlap(self):
+        assert not sched_module._is_already_booked(
+            [self._booking("13:30:00", 30)], "2026-04-15", "13:00:00", 30
+        )
+
+    def test_different_date_ignored(self):
+        assert not sched_module._is_already_booked(
+            [self._booking("13:00:00", 60, date="2026-04-16")],
+            "2026-04-15",
+            "13:00:00",
+            60,
+        )
+
+    def test_missing_duration_defaults_to_30(self):
+        booking = {"date": "2026-04-15", "start_time": "13:00:00"}
+        assert sched_module._is_already_booked([booking], "2026-04-15", "13:00:00", 30)
+        assert not sched_module._is_already_booked(
+            [booking], "2026-04-15", "13:30:00", 30
+        )
+
+    def test_malformed_booking_is_skipped(self):
+        """A bad entry must not crash the run."""
+        assert not sched_module._is_already_booked(
+            [{"date": "2026-04-15", "start_time": "not-a-time"}],
+            "2026-04-15",
+            "13:00:00",
+            30,
+        )
+
+
 class TestAlreadyBooked:
     def test_already_booked_skips_rule(self):
         """If the target slot is already booked, book_lesson is never called."""
@@ -469,6 +540,62 @@ class TestAlreadyBooked:
             existing_bookings=existing,
         )
         assert not book_fn.called
+
+    def test_overlapping_recurring_class_skips_rule(self):
+        """
+        A 60-minute recurring class booked on the website starts at 12:30 and
+        runs to 13:30, so a 13:00 rule overlaps it. Matching on start time alone
+        would miss this and double-book.
+        """
+        rules = make_rules(
+            weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"]
+        )
+
+        existing = [
+            {
+                "id": "5000",
+                "staff_id": "999",  # a different tutor — still our time
+                "date": "2026-04-15",
+                "start_time": "12:30:00",
+                "status": "approved",
+                "past": False,
+                "duration_minutes": 60,
+            }
+        ]
+
+        book_fn = run_due_with_mocks(
+            frozen_time="2026-04-08T10:29:00+00:00",
+            rules=rules,
+            available_teachers=[make_available("184", "Maria Garcia")],
+            existing_bookings=existing,
+        )
+        assert not book_fn.called
+
+    def test_adjacent_non_overlapping_class_still_books(self):
+        """A class ending exactly when ours starts must not block the booking."""
+        rules = make_rules(
+            weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"]
+        )
+
+        existing = [
+            {
+                "id": "5000",
+                "staff_id": "999",
+                "date": "2026-04-15",
+                "start_time": "12:00:00",
+                "status": "approved",
+                "past": False,
+                "duration_minutes": 60,  # 12:00–13:00, touches but does not overlap
+            }
+        ]
+
+        book_fn = run_due_with_mocks(
+            frozen_time="2026-04-08T10:29:00+00:00",
+            rules=rules,
+            available_teachers=[make_available("184", "Maria Garcia")],
+            existing_bookings=existing,
+        )
+        assert book_fn.called
 
 
 # ---------------------------------------------------------------------------

@@ -199,12 +199,33 @@ def _print_verbose_upcoming(all_upcoming_rules, now_local, rules_data):
     print("--------------------------")
 
 
-def _is_already_booked(approved_bookings, date_str, start_time_str) -> bool:
-    """Returns True if an approved booking already exists for the given date and time."""
-    return any(
-        b.get("date") == date_str and b.get("start_time") == start_time_str
-        for b in approved_bookings
-    )
+def _is_already_booked(
+    approved_bookings, date_str, start_time_str, duration_minutes=30
+) -> bool:
+    """
+    Returns True if an existing booking overlaps the requested time range.
+
+    Compares ranges rather than exact start times: recurring classes booked via
+    the website are 60 minutes long, so a rule starting halfway through one
+    would not match on start time alone and would double-book.
+    """
+    target_start = dt.strptime(f"{date_str} {start_time_str}", "%Y-%m-%d %H:%M:%S")
+    target_end = target_start + timedelta(minutes=duration_minutes)
+
+    for b in approved_bookings:
+        if b.get("date") != date_str:
+            continue
+        try:
+            other_start = dt.strptime(
+                f"{b['date']} {b['start_time']}", "%Y-%m-%d %H:%M:%S"
+            )
+        except (KeyError, ValueError):
+            continue
+        other_end = other_start + timedelta(minutes=b.get("duration_minutes", 30))
+        if target_start < other_end and other_start < target_end:
+            return True
+
+    return False
 
 
 def _get_candidates(
@@ -535,16 +556,16 @@ def _run_schedule(
             target_dt = dt.fromisoformat(target_slot_iso)
             target_date_str = target_dt.strftime("%Y-%m-%d")
             target_start_time_str = target_dt.strftime("%H:%M:00")
+            duration = rule.duration_minutes
 
             if _is_already_booked(
-                approved_bookings, target_date_str, target_start_time_str
+                approved_bookings, target_date_str, target_start_time_str, duration
             ):
                 logger.info(
                     f"[{slot_key}] Already booked — skipping", schedule=schedule_name
                 )
                 continue
 
-            duration = rule.duration_minutes
             available_teachers = get_available_teachers(
                 client, target_slot_iso, duration
             )
