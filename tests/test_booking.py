@@ -274,6 +274,78 @@ class TestGetBookings(BaseTest):
 
         assert get_bookings(self.mock_client)[0]["status"] == "cancelled"
 
+    def test_follows_pagination(self):
+        """
+        Recurring classes can push the list past one page. A missed page is
+        invisible to the double-book check, so every page must be fetched.
+        """
+        page1 = {
+            "data": [
+                {
+                    "id": "1",
+                    "tutor_id": 4609,
+                    "date_time": "2026-08-02T11:00:00+00:00",
+                    "status": "upcoming",
+                }
+            ],
+            "meta": {"page": 1, "per_page": 50, "total": 2, "total_pages": 2},
+        }
+        page2 = {
+            "data": [
+                {
+                    "id": "2",
+                    "tutor_id": 4508,
+                    "date_time": "2026-08-03T11:00:00+00:00",
+                    "status": "upcoming",
+                }
+            ],
+            "meta": {"page": 2, "per_page": 50, "total": 2, "total_pages": 2},
+        }
+        self.router.get("/students/me/my-classes", params={"page": 1}).mock(
+            return_value=httpx.Response(200, json=page1)
+        )
+        self.router.get("/students/me/my-classes", params={"page": 2}).mock(
+            return_value=httpx.Response(200, json=page2)
+        )
+
+        result = get_bookings(self.mock_client)
+        assert [b["booking_id"] for b in result] == ["1", "2"]
+
+    def test_one_bad_entry_does_not_discard_the_rest(self):
+        """
+        Returning [] because of a single malformed record would read as
+        "nothing booked" and invite a double-booking.
+        """
+        self._mock_classes(
+            [
+                {"id": "1", "tutor_id": 4609, "date_time": None, "status": "upcoming"},
+                {
+                    "id": "2",
+                    "tutor_id": 4508,
+                    "date_time": "2026-08-03T11:00:00+00:00",
+                    "status": "upcoming",
+                },
+            ]
+        )
+
+        result = get_bookings(self.mock_client)
+        assert [b["booking_id"] for b in result] == ["2"]
+
+    def test_null_duration_defaults_to_30(self):
+        self._mock_classes(
+            [
+                {
+                    "id": "1",
+                    "tutor_id": 4609,
+                    "date_time": "2026-08-02T11:00:00+00:00",
+                    "status": "upcoming",
+                    "duration_minutes": None,
+                }
+            ]
+        )
+
+        assert get_bookings(self.mock_client)[0]["duration_minutes"] == 30
+
     def test_returns_empty_on_http_error(self):
         self.router.get("/students/me/my-classes").mock(
             return_value=httpx.Response(401, text="Unauthorized")

@@ -8,9 +8,10 @@ Strategy:
   so we test the orchestration logic without real I/O
 """
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, date, timezone, timedelta
 from unittest.mock import MagicMock, patch
 from freezegun import freeze_time
+import pytz
 
 import app.services.scheduler as sched_module
 from app.services.scheduler import get_synced_now, run_due_process
@@ -195,6 +196,61 @@ def run_due_with_mocks(
 # ---------------------------------------------------------------------------
 # Booking window / rule evaluation
 # ---------------------------------------------------------------------------
+
+
+class TestBookingWindowDST:
+    """
+    The window is a fixed absolute offset (7 days + 30 min) before the lesson.
+    Computing it on the local wall clock and re-localising shifts it by an hour
+    across a DST boundary — an hour early in October (the API rejects the
+    booking) or an hour late in March (the race is already lost).
+    """
+
+    @staticmethod
+    def _window_for(lesson_date, start_time, now_local):
+        rules = make_rules(
+            weekday=lesson_date.strftime("%a").lower(), start_time=start_time
+        )
+        _, _, _, upcoming = sched_module._evaluate_rules(rules, now_local)
+        return next(
+            open_dt
+            for open_dt, _, lesson_dt in upcoming
+            if lesson_dt.date() == lesson_date
+        )
+
+    def test_window_is_exact_offset_across_october_transition(self):
+        """Lesson 25 Oct (CET) — window falls 18 Oct, still CEST."""
+        tz = pytz.timezone("Europe/Madrid")
+        lesson_date = date(2026, 10, 25)
+        now_local = tz.localize(datetime(2026, 10, 17, 9, 0))
+
+        open_dt = self._window_for(lesson_date, "13:00", now_local)
+        lesson_dt = tz.localize(datetime(2026, 10, 25, 13, 0))
+
+        elapsed = lesson_dt.astimezone(pytz.utc) - open_dt.astimezone(pytz.utc)
+        assert elapsed == timedelta(days=7, minutes=30)
+        assert open_dt.strftime("%Y-%m-%d %H:%M") == "2026-10-18 13:30"
+
+    def test_window_is_exact_offset_across_march_transition(self):
+        """Lesson 29 Mar (CEST) — window falls 22 Mar, still CET."""
+        tz = pytz.timezone("Europe/Madrid")
+        lesson_date = date(2026, 3, 29)
+        now_local = tz.localize(datetime(2026, 3, 21, 9, 0))
+
+        open_dt = self._window_for(lesson_date, "13:00", now_local)
+        lesson_dt = tz.localize(datetime(2026, 3, 29, 13, 0))
+
+        elapsed = lesson_dt.astimezone(pytz.utc) - open_dt.astimezone(pytz.utc)
+        assert elapsed == timedelta(days=7, minutes=30)
+        assert open_dt.strftime("%Y-%m-%d %H:%M") == "2026-03-22 11:30"
+
+    def test_window_unaffected_outside_dst_transitions(self):
+        tz = pytz.timezone("Europe/Madrid")
+        lesson_date = date(2026, 8, 15)
+        now_local = tz.localize(datetime(2026, 8, 7, 9, 0))
+
+        open_dt = self._window_for(lesson_date, "13:00", now_local)
+        assert open_dt.strftime("%Y-%m-%d %H:%M") == "2026-08-08 12:30"
 
 
 class TestRuleEvaluation:
@@ -476,6 +532,39 @@ class TestOverlapDetection:
             [self._booking("13:15:00", 15)], "2026-04-15", "13:00:00", 60
         )
 
+    def test_overlap_across_midnight(self):
+        """
+        A 23:30 rule running to 00:30 must see a 00:00 class the following day.
+        Filtering candidates by date alone would miss it and double-book.
+        """
+        assert sched_module._is_already_booked(
+            [self._booking("00:00:00", 30, date="2026-04-16")],
+            "2026-04-15",
+            "23:30:00",
+            60,
+        )
+
+    def test_previous_day_class_running_past_midnight(self):
+        """A 23:45 class the day before overlaps a 00:00 rule."""
+        assert sched_module._is_already_booked(
+            [self._booking("23:45:00", 30, date="2026-04-14")],
+            "2026-04-15",
+            "00:00:00",
+            30,
+        )
+
+    def test_null_duration_does_not_crash(self):
+        """The API can send an explicit null duration; treat it as 30 minutes."""
+        booking = {
+            "date": "2026-04-15",
+            "start_time": "13:00:00",
+            "duration_minutes": None,
+        }
+        assert sched_module._is_already_booked([booking], "2026-04-15", "13:00:00", 30)
+        assert not sched_module._is_already_booked(
+            [booking], "2026-04-15", "13:30:00", 30
+        )
+
     def test_touching_before_is_not_overlap(self):
         """Existing 12:00–13:00 does not block a 13:00 start."""
         assert not sched_module._is_already_booked(
@@ -684,6 +773,75 @@ class TestDailyLimit:
 
 
 class TestAdjacencyPriority:
+    def test_adjacency_matches_on_end_time_not_fixed_offset(self):
+        """
+        A class ending exactly when ours starts makes its teacher adjacent,
+        whatever its length. Matching a fixed 30-minute offset would look for a
+        12:30 start and miss this 12:45–13:00 class.
+        """
+        rules = make_rules(
+            weekday="wed",
+            start_time="13:00",
+            preferred_teachers=["Maria Garcia", "Carlos Lopez"],
+        )
+
+        existing = [
+            {
+                "staff_id": "159",
+                "date": "2026-04-15",
+                "start_time": "12:45:00",
+                "duration_minutes": 15,  # 12:45–13:00
+                "status": "approved",
+                "past": False,
+            },
+        ]
+        available = [
+            make_available("184", "Maria Garcia"),
+            make_available("159", "Carlos Lopez"),
+        ]
+
+        book_fn = run_due_with_mocks(
+            frozen_time="2026-04-08T10:29:00+00:00",
+            rules=rules,
+            available_teachers=available,
+            existing_bookings=existing,
+        )
+
+        assert book_fn.called
+        assert book_fn.call_args_list[0][0][1] == "159"  # promoted over 184
+
+    def test_non_adjacent_earlier_class_not_promoted(self):
+        """A class ending well before ours must not trigger promotion."""
+        rules = make_rules(
+            weekday="wed",
+            start_time="13:00",
+            preferred_teachers=["Maria Garcia", "Carlos Lopez"],
+        )
+
+        existing = [
+            {
+                "staff_id": "159",
+                "date": "2026-04-15",
+                "start_time": "10:00:00",
+                "duration_minutes": 30,
+                "status": "approved",
+                "past": False,
+            },
+        ]
+        available = [
+            make_available("184", "Maria Garcia"),
+            make_available("159", "Carlos Lopez"),
+        ]
+
+        book_fn = run_due_with_mocks(
+            frozen_time="2026-04-08T10:29:00+00:00",
+            rules=rules,
+            available_teachers=available,
+            existing_bookings=existing,
+        )
+
+        assert book_fn.call_args_list[0][0][1] == "184"  # preferred order kept
+
     def test_adjacent_teacher_moved_to_front(self):
         """
         If teacher 159 taught the slot at 12:30 (30 min before 13:00),
@@ -759,9 +917,20 @@ class TestAdjacencyPriority:
 
 
 class TestRetryLogic:
+    # The API returns INSUFFICIENT_AVAILABILITY both for a genuinely taken slot
+    # and for arriving a fraction before the window opens, so it is retryable.
+    TIMING_ERROR = {
+        "status": "error",
+        "status_code": 422,
+        "message": (
+            'Hold failed — HTTP 422: {"code":"BOOKING.INSUFFICIENT_AVAILABILITY",'
+            '"message":"This tutor is not available for the full requested duration."}'
+        ),
+    }
+
     def test_retry_on_timing_error(self):
         """
-        If book_lesson returns the Spanish timing error twice then succeeds,
+        If book_lesson returns the timing error twice then succeeds,
         book_lesson should be called 3 times total (2 retries + 1 success).
         """
         rules = make_rules(
@@ -769,11 +938,11 @@ class TestRetryLogic:
         )
         available = [make_available("184", "Maria Garcia")]
 
-        timing_error = {
-            "status": "error",
-            "message": "La fecha excede el límite de agendamiento.",
-        }
-        book_results = [timing_error, timing_error, {"status": "success", "id": "9999"}]
+        book_results = [
+            self.TIMING_ERROR,
+            self.TIMING_ERROR,
+            {"status": "success", "id": "9999"},
+        ]
 
         book_fn = run_due_with_mocks(
             frozen_time="2026-04-08T10:29:00+00:00",
@@ -794,7 +963,7 @@ class TestRetryLogic:
         )
         available = [make_available("184", "Maria Garcia")]
 
-        timing_error = {"status": "error", "message": "excede el agendamiento límite"}
+        timing_error = self.TIMING_ERROR
         book_results = [timing_error, timing_error, timing_error]
 
         book_fn = run_due_with_mocks(
@@ -805,6 +974,66 @@ class TestRetryLogic:
         )
 
         assert book_fn.call_count == 3
+
+    def test_reauth_retry_keeps_the_duration(self):
+        """
+        After a 401 the booking is retried — it must still ask for 60 minutes.
+        Dropping the argument silently books a 30-minute class instead.
+        """
+        rules = SchedulingRules(
+            timezone="Europe/Madrid",
+            credentials=ScheduleCredentials(email="t@example.com", password="s"),
+            rules=[
+                BookingRule(
+                    enabled=True,
+                    weekday="wed",
+                    start_time="13:00",
+                    slots=2,  # 60-minute lesson
+                    preferred_teachers=["Maria Garcia"],
+                )
+            ],
+        )
+
+        auth_error = {
+            "status": "error",
+            "status_code": 401,
+            "message": 'Hold failed — HTTP 401: {"message":"Unauthenticated."}',
+        }
+        book_results = [auth_error, {"status": "success", "id": "9999"}]
+
+        with patch.object(sched_module, "_refresh_schedule_token", return_value=True):
+            book_fn = run_due_with_mocks(
+                frozen_time="2026-04-08T10:29:00+00:00",
+                rules=rules,
+                available_teachers=[make_available("184", "Maria Garcia")],
+                book_results=book_results,
+            )
+
+        assert book_fn.call_count == 2
+        # positional signature: (client, tid, iso, focus_type, activity_id, duration)
+        assert book_fn.call_args_list[0][0][5] == 60
+        assert book_fn.call_args_list[1][0][5] == 60
+
+    def test_no_reauth_when_401_appears_in_a_booking_id(self):
+        """A booking id containing 401 must not be mistaken for an auth failure."""
+        rules = make_rules(
+            weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"]
+        )
+        misleading = {
+            "status": "error",
+            "status_code": 422,
+            "message": 'Hold failed — HTTP 422: {"booking_id":"408401"}',
+        }
+
+        with patch.object(sched_module, "_refresh_schedule_token") as refresh:
+            run_due_with_mocks(
+                frozen_time="2026-04-08T10:29:00+00:00",
+                rules=rules,
+                available_teachers=[make_available("184", "Maria Garcia")],
+                book_results=[misleading],
+            )
+
+        assert not refresh.called
 
     def test_no_retry_on_non_timing_error(self):
         """A generic error should not trigger a retry — fail fast and try next candidate."""

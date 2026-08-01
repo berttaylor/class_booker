@@ -120,25 +120,30 @@ def _evaluate_rules(rules_data, now_local):
             if weekday_str != rule.weekday:
                 continue
 
-            for slot_index, slot_time_str in enumerate(rule.slot_times()):
+            for slot_time_str in rule.slot_times():
                 lesson_time = dt.strptime(slot_time_str, "%H:%M").time()
                 lesson_dt = local_tz.localize(dt.combine(target_date, lesson_time))
 
-                booking_open_dt = lesson_dt - timedelta(
-                    days=BOOKING_OPEN_OFFSET_DAYS,
-                    minutes=BOOKING_OPEN_OFFSET_MINUTES,
-                )
-                booking_open_dt = local_tz.localize(
-                    booking_open_dt.replace(tzinfo=None)
-                )
+                # Offset in absolute time: subtract in UTC, then convert back.
+                # Doing the arithmetic on the local wall clock and re-localising
+                # shifts the window by an hour across a DST boundary — an hour
+                # early in October (booking rejected), an hour late in March
+                # (race already lost).
+                booking_open_dt = (
+                    lesson_dt.astimezone(pytz.utc)
+                    - timedelta(
+                        days=BOOKING_OPEN_OFFSET_DAYS,
+                        minutes=BOOKING_OPEN_OFFSET_MINUTES,
+                    )
+                ).astimezone(local_tz)
 
                 if booking_open_dt < now_local - timedelta(minutes=5):
                     continue
 
                 found_occurrence = True
-                slot_key = (
-                    f"{rule.id}_slot{slot_index + 1}" if rule.slots > 1 else rule.id
-                )
+                # One booking per rule occurrence — a 2-slot rule is a single
+                # 60-minute lesson, so there is no slot index to disambiguate.
+                slot_key = rule.id
                 all_upcoming_rules.append((booking_open_dt, rule, lesson_dt))
 
                 diff = (booking_open_dt - now_local).total_seconds()
@@ -213,15 +218,14 @@ def _is_already_booked(
     target_end = target_start + timedelta(minutes=duration_minutes)
 
     for b in approved_bookings:
-        if b.get("date") != date_str:
-            continue
         try:
             other_start = dt.strptime(
                 f"{b['date']} {b['start_time']}", "%Y-%m-%d %H:%M:%S"
             )
-        except (KeyError, ValueError):
+        except (KeyError, ValueError, TypeError):
             continue
-        other_end = other_start + timedelta(minutes=b.get("duration_minutes", 30))
+        # `or 30` rather than a get() default: the API can send an explicit null.
+        other_end = other_start + timedelta(minutes=b.get("duration_minutes") or 30)
         if target_start < other_end and other_start < target_end:
             return True
 
@@ -284,17 +288,25 @@ def _get_candidates(
     if not final_candidates:
         return []
 
-    # Adjacency priority — promote teacher who taught the preceding 30-min slot
-    prev_slot_start = (target_dt - timedelta(minutes=30)).strftime("%H:%M:00")
-    prev_teacher = next(
-        (
-            str(b.get("staff_id"))
-            for b in approved_bookings
-            if b.get("date") == target_date_str
-            and b.get("start_time") == prev_slot_start
-        ),
-        None,
-    )
+    # Adjacency priority — promote the teacher whose class ends exactly when
+    # ours starts, so consecutive lessons stay with the same tutor. Matched on
+    # end time rather than a fixed 30-minute offset, since a preceding class may
+    # itself be 60 minutes long.
+    target_naive = target_dt.replace(tzinfo=None)
+    prev_teacher = None
+    for b in approved_bookings:
+        if b.get("date") != target_date_str:
+            continue
+        try:
+            other_start = dt.strptime(
+                f"{b['date']} {b['start_time']}", "%Y-%m-%d %H:%M:%S"
+            )
+        except (KeyError, ValueError, TypeError):
+            continue
+        other_end = other_start + timedelta(minutes=b.get("duration_minutes") or 30)
+        if other_end == target_naive:
+            prev_teacher = str(b.get("staff_id"))
+            break
     if prev_teacher:
         prev_cand = next(
             (c for c in final_candidates if str(c["id"]) == prev_teacher), None
@@ -395,15 +407,19 @@ def _attempt_booking(
                 duration_minutes,
             )
 
-            # Auth error — refresh token and retry once
-            if res.get("status") == "error" and (
-                "Unauthorized" in str(res.get("message"))
-                or "401" in str(res.get("message"))
-            ):
+            # Auth error — refresh token and retry once. Keyed on the real
+            # status code: a bare "401" substring also matches booking ids and
+            # session numbers, triggering a pointless re-auth mid-race.
+            if res.get("status_code") in (401, 403):
                 logger.info(f"{prefix}Re-auth: token rejected, refreshing...")
                 _refresh_schedule_token(client, credentials, cache_file)
                 res = book_lesson(
-                    client, tid, target_slot_iso, focus_type, activity_suggestion_id
+                    client,
+                    tid,
+                    target_slot_iso,
+                    focus_type,
+                    activity_suggestion_id,
+                    duration_minutes,
                 )
 
             if res.get("status") == "success":
@@ -422,13 +438,12 @@ def _attempt_booking(
             error_msg = str(res.get("message", "unknown error"))
             logger.error(f"{prefix}Failed: {tname} ({tid}): {error_msg}")
 
-            # If it's the specific Spanish error that happens when we're too early,
-            # wait a tiny bit and retry. Otherwise, it's a "real" error, so move
-            # to the next candidate.
-            if (
-                "excede el límite" in error_msg.lower()
-                or "excede el agendamiento límite" in error_msg.lower()
-            ):
+            # The API returns INSUFFICIENT_AVAILABILITY both when a slot is
+            # genuinely taken and when we arrive a fraction before it opens, so
+            # retry briefly rather than moving straight to the next candidate.
+            # (The old API signalled this with a Spanish "excede el límite"
+            # message, which this backend never sends.)
+            if "INSUFFICIENT_AVAILABILITY" in error_msg.upper():
                 logger.info(f"{prefix}Retry {attempt + 1}/{max_retries}...")
                 time.sleep(0.5)
                 continue

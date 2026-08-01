@@ -49,23 +49,38 @@ def get_bookings(client: BookingClient) -> List[Dict[str, Any]]:
     date and start_time are converted from the API's UTC into the configured
     timezone, because the scheduler compares them against local-time rule slots.
     """
-    response = client.get(
-        app_config.my_classes_endpoint,
-        params={"tab": "upcoming", "page": 1, "per_page": 50},
-    )
-
-    if response.status_code != 200:
-        logger.error(f"Failed to fetch bookings. Status: {response.status_code}")
-        return []
-
     local_tz = pytz.timezone(app_config.timezone)
     bookings = []
+    page = 1
+    total_pages = 1
 
-    try:
-        for c in response.json().get("data", []):
-            local_dt = dt.fromisoformat(
-                c["date_time"].replace("Z", "+00:00")
-            ).astimezone(local_tz)
+    while page <= total_pages:
+        response = client.get(
+            app_config.my_classes_endpoint,
+            params={"tab": "upcoming", "page": page, "per_page": 50},
+        )
+
+        if response.status_code != 200:
+            logger.error(f"Failed to fetch bookings. Status: {response.status_code}")
+            return []
+
+        try:
+            payload = response.json()
+        except Exception as e:
+            logger.error(f"Error parsing bookings response: {e}")
+            return []
+
+        for c in payload.get("data", []):
+            # Skip only the offending entry: returning [] for one bad record
+            # would read as "nothing booked" and invite a double-booking.
+            try:
+                local_dt = dt.fromisoformat(
+                    c["date_time"].replace("Z", "+00:00")
+                ).astimezone(local_tz)
+            except (KeyError, ValueError, TypeError, AttributeError) as e:
+                logger.warning(f"Skipping unparseable booking {c.get('id')}: {e}")
+                continue
+
             bookings.append(
                 {
                     "staff_id": str(c.get("tutor_id")),
@@ -76,12 +91,12 @@ def get_bookings(client: BookingClient) -> List[Dict[str, Any]]:
                     else c.get("status"),
                     "past": False,
                     "booking_id": c.get("id"),
-                    "duration_minutes": c.get("duration_minutes", 30),
+                    "duration_minutes": c.get("duration_minutes") or 30,
                 }
             )
-    except Exception as e:
-        logger.error(f"Error parsing bookings response: {e}")
-        return []
+
+        total_pages = (payload.get("meta") or {}).get("total_pages", 1)
+        page += 1
 
     return bookings
 
@@ -147,6 +162,7 @@ def book_lesson(
         if hold.status_code != 200:
             return {
                 "status": "error",
+                "status_code": hold.status_code,
                 "message": f"Hold failed — HTTP {hold.status_code}: {hold.text}",
             }
 
@@ -163,6 +179,7 @@ def book_lesson(
             )
             return {
                 "status": "error",
+                "status_code": confirm.status_code,
                 "message": f"Confirm failed — HTTP {confirm.status_code}: {confirm.text}",
             }
 
