@@ -28,10 +28,6 @@ CACHE_DIR = Path(__file__).parent.parent.parent / "cache"
 
 LOCK_FILE = ".run_due.lock"
 
-BOOKING_DELAY_MIN_SECONDS = 15
-BOOKING_DELAY_MAX_SECONDS = 30
-
-
 # ---------------------------------------------------------------------------
 # Lock management
 # ---------------------------------------------------------------------------
@@ -180,30 +176,6 @@ def _apply_force_flag(
         rule_open_times[slot_key] = next_open_dt
 
 
-def _print_verbose_upcoming(all_upcoming_rules, now_local, rules_data):
-    """Prints the UPCOMING RULE INFO block when --verbose is active."""
-    all_upcoming_rules.sort(key=lambda x: x[0])
-    next_open_dt, next_rule, next_lesson_dt = all_upcoming_rules[0]
-    time_until = next_open_dt - now_local
-
-    hours, remainder = divmod(int(time_until.total_seconds()), 3600)
-    minutes, seconds = divmod(remainder, 60)
-    time_str = (
-        f"{hours}h {minutes}m {seconds}s" if hours > 0 else f"{minutes}m {seconds}s"
-    )
-
-    print("--- UPCOMING RULE INFO ---")
-    print(f"Next rule: {next_rule.id}")
-    print(
-        f"Lesson time: {next_lesson_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})"
-    )
-    print(
-        f"Booking opens at: {next_open_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})"
-    )
-    print(f"Time until booking opens: {time_str}")
-    print("--------------------------")
-
-
 def _is_already_booked(
     approved_bookings, date_str, start_time_str, duration_minutes=30
 ) -> bool:
@@ -237,15 +209,13 @@ def _get_candidates(
     available_teachers,
     approved_bookings,
     target_date_str,
-    target_dt,
     duration_minutes=30,
 ):
     """
     Builds a priority-sorted candidate list for one rule:
       1. Intersect rule.teacher_ids with available teachers
       2. Filter out teachers who have reached the 60-min daily limit
-      3. Promote the teacher from the adjacent preceding slot to the front
-    Returns candidates where the list is prioritized by preferred order then adjacency.
+    Returns candidates in the rule's preferred order.
     """
     available_teacher_ids = [str(t["id"]) for t in available_teachers]
 
@@ -284,39 +254,6 @@ def _get_candidates(
             final_candidates.append(cand)
         else:
             logger.info(f"Removed: {cand['name']} ({tid}) — 60m limit")
-
-    if not final_candidates:
-        return []
-
-    # Adjacency priority — promote the teacher whose class ends exactly when
-    # ours starts, so consecutive lessons stay with the same tutor. Matched on
-    # end time rather than a fixed 30-minute offset, since a preceding class may
-    # itself be 60 minutes long.
-    target_naive = target_dt.replace(tzinfo=None)
-    prev_teacher = None
-    for b in approved_bookings:
-        if b.get("date") != target_date_str:
-            continue
-        try:
-            other_start = dt.strptime(
-                f"{b['date']} {b['start_time']}", "%Y-%m-%d %H:%M:%S"
-            )
-        except (KeyError, ValueError, TypeError):
-            continue
-        other_end = other_start + timedelta(minutes=b.get("duration_minutes") or 30)
-        if other_end == target_naive:
-            prev_teacher = str(b.get("staff_id"))
-            break
-    if prev_teacher:
-        prev_cand = next(
-            (c for c in final_candidates if str(c["id"]) == prev_teacher), None
-        )
-        if prev_cand:
-            final_candidates.remove(prev_cand)
-            final_candidates.insert(0, prev_cand)
-            logger.info(
-                f"Prioritised: {prev_cand['name']} ({prev_teacher}) (adjacent slot)"
-            )
 
     return final_candidates
 
@@ -590,7 +527,6 @@ def _run_schedule(
                 available_teachers,
                 approved_bookings,
                 target_date_str,
-                target_dt,
                 duration,
             )
             if not candidates:
