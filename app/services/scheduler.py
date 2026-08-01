@@ -208,7 +208,12 @@ def _is_already_booked(approved_bookings, date_str, start_time_str) -> bool:
 
 
 def _get_candidates(
-    rule, available_teachers, approved_bookings, target_date_str, target_dt
+    rule,
+    available_teachers,
+    approved_bookings,
+    target_date_str,
+    target_dt,
+    duration_minutes=30,
 ):
     """
     Builds a priority-sorted candidate list for one rule:
@@ -240,16 +245,17 @@ def _get_candidates(
     if not candidates:
         return []
 
-    # Daily 60-min limit filter
+    # Daily 60-min limit filter. Counts each booking's real length — a single
+    # 60-minute class already exhausts the day's allowance for that teacher.
     final_candidates = []
     for cand in candidates:
         tid = str(cand["id"])
         booked_minutes = sum(
-            30
+            b.get("duration_minutes", 30)
             for b in approved_bookings
             if str(b.get("staff_id")) == tid and b.get("date") == target_date_str
         )
-        if booked_minutes < 60:
+        if booked_minutes + duration_minutes <= 60:
             final_candidates.append(cand)
         else:
             logger.info(f"Removed: {cand['name']} ({tid}) — 60m limit")
@@ -338,6 +344,7 @@ def _attempt_booking(
     cache_file: Path,
     slot_key="",
     focus: tuple = (None, None),
+    duration_minutes: int = 30,
 ) -> bool:
     """
     Iterates candidates and attempts to book the lesson.
@@ -359,7 +366,12 @@ def _attempt_booking(
 
         for attempt in range(max_retries):
             res = book_lesson(
-                client, tid, target_slot_iso, focus_type, activity_suggestion_id
+                client,
+                tid,
+                target_slot_iso,
+                focus_type,
+                activity_suggestion_id,
+                duration_minutes,
             )
 
             # Auth error — refresh token and retry once
@@ -381,6 +393,7 @@ def _attempt_booking(
                         "date": target_date_str,
                         "start_time": target_start_time_str,
                         "status": "approved",
+                        "duration_minutes": duration_minutes,
                     }
                 )
                 return True
@@ -531,10 +544,18 @@ def _run_schedule(
                 )
                 continue
 
-            available_teachers = get_available_teachers(client, target_slot_iso)
+            duration = rule.duration_minutes
+            available_teachers = get_available_teachers(
+                client, target_slot_iso, duration
+            )
 
             candidates = _get_candidates(
-                rule, available_teachers, approved_bookings, target_date_str, target_dt
+                rule,
+                available_teachers,
+                approved_bookings,
+                target_date_str,
+                target_dt,
+                duration,
             )
             if not candidates:
                 logger.info(
@@ -585,6 +606,7 @@ def _run_schedule(
                 cache_file=cache_file,
                 slot_key=slot_key,
                 focus=focus,
+                duration_minutes=duration,
             )
             if not success:
                 logger.error(

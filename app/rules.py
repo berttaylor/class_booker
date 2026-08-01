@@ -1,7 +1,7 @@
 import re
 import yaml
 import pytz
-from datetime import datetime as dt, timedelta
+from datetime import datetime as dt
 from pathlib import Path
 from app import logger
 from pydantic import BaseModel, field_validator
@@ -62,12 +62,20 @@ class BookingRule(BaseModel):
         return f"{self.weekday}_{suffix}"
 
     def slot_times(self) -> List[str]:
-        """Returns list of HH:MM start times for each slot."""
-        base = dt.strptime(self.start_time, "%H:%M")
-        return [
-            (base + timedelta(minutes=30 * i)).strftime("%H:%M")
-            for i in range(self.slots)
-        ]
+        """
+        Returns the HH:MM start times to book — always a single entry.
+
+        `slots` is a duration multiplier, not a repeat count: the API takes
+        duration_minutes, so a 2-slot rule is one 60-minute booking rather than
+        two consecutive 30-minute ones. Kept as a list so callers that enumerate
+        it are unaffected.
+        """
+        return [self.start_time]
+
+    @property
+    def duration_minutes(self) -> int:
+        """Total lesson length — 30 minutes per slot."""
+        return 30 * self.slots
 
 
 class ScheduleSettings(BaseModel):

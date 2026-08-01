@@ -76,6 +76,7 @@ def get_bookings(client: BookingClient) -> List[Dict[str, Any]]:
                     else c.get("status"),
                     "past": False,
                     "booking_id": c.get("id"),
+                    "duration_minutes": c.get("duration_minutes", 30),
                 }
             )
     except Exception as e:
@@ -110,9 +111,14 @@ def book_lesson(
     lesson_datetime: str,
     focus_type: Optional[str] = None,
     activity_suggestion_id: Optional[int] = None,
+    duration_minutes: int = SLOT_MINUTES,
 ) -> Dict[str, Any]:
     """
     Books a lesson via the two-step hold-then-confirm flow.
+
+    duration_minutes may exceed one 30-minute slot: the API books a single
+    longer lesson spanning consecutive slots, so a 60-minute class is one
+    request rather than two.
 
     Success is HTTP 200 — neither endpoint returns a status field. If the hold
     succeeds but the confirm fails the slot stays held until it expires (~5 min),
@@ -123,10 +129,11 @@ def book_lesson(
     try:
         start_dt = dt.fromisoformat(lesson_datetime.replace("Z", "+00:00"))
         start_utc = start_dt.astimezone(timezone.utc)
-        end_utc = start_utc + timedelta(minutes=SLOT_MINUTES)
+        end_utc = start_utc + timedelta(minutes=duration_minutes)
 
         logger.info(
-            f"Booking class for {start_dt.astimezone(local_tz).strftime('%H:%M')} "
+            f"Booking {duration_minutes}min class for "
+            f"{start_dt.astimezone(local_tz).strftime('%H:%M')} "
             f"Spain time ({start_utc.strftime('%H:%M')} UTC)"
         )
 
@@ -143,7 +150,7 @@ def book_lesson(
                 "message": f"Hold failed — HTTP {hold.status_code}: {hold.text}",
             }
 
-        payload = {**slot, "duration_minutes": SLOT_MINUTES}
+        payload = {**slot, "duration_minutes": duration_minutes}
         if focus_type and activity_suggestion_id:
             payload["focus_type"] = focus_type
             payload["activity_suggestion_id"] = activity_suggestion_id

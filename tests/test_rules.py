@@ -128,13 +128,22 @@ class TestBookingRuleModel:
         rule = BookingRule(**self._valid_kwargs(start_time="13:00", slots=1))
         assert rule.slot_times() == ["13:00"]
 
-    def test_slot_times_double(self):
+    def test_slot_times_double_is_still_one_booking(self):
+        """A 2-slot rule books once for 60 minutes, not twice for 30."""
         rule = BookingRule(**self._valid_kwargs(start_time="13:00", slots=2))
-        assert rule.slot_times() == ["13:00", "13:30"]
+        assert rule.slot_times() == ["13:00"]
 
     def test_slot_times_double_at_half_hour(self):
         rule = BookingRule(**self._valid_kwargs(start_time="18:30", slots=2))
-        assert rule.slot_times() == ["18:30", "19:00"]
+        assert rule.slot_times() == ["18:30"]
+
+    def test_duration_minutes_single(self):
+        rule = BookingRule(**self._valid_kwargs(slots=1))
+        assert rule.duration_minutes == 30
+
+    def test_duration_minutes_double(self):
+        rule = BookingRule(**self._valid_kwargs(slots=2))
+        assert rule.duration_minutes == 60
 
     def test_rule_fields_typed_correctly(self):
         rule = BookingRule(**self._valid_kwargs(enabled=False))

@@ -71,9 +71,28 @@ class TestBookLessonPayload(BaseTest):
         assert payload["start_time"] == "2026-08-03T23:45:00.000Z"
         assert payload["end_time"] == "2026-08-04T00:15:00.000Z"
 
-    def test_duration_is_30_minutes(self):
+    def test_duration_defaults_to_30_minutes(self):
         payload = self._confirm_payload("2026-08-03T13:00:00+02:00")
         assert payload["duration_minutes"] == 30
+
+    def test_60min_booking_spans_a_full_hour(self):
+        """One request covers both half-hours rather than two bookings."""
+        payload = self._confirm_payload(
+            "2026-08-03T13:00:00+02:00", duration_minutes=60
+        )
+
+        assert payload["duration_minutes"] == 60
+        assert payload["start_time"] == "2026-08-03T11:00:00.000Z"
+        assert payload["end_time"] == "2026-08-03T12:00:00.000Z"
+
+    def test_60min_hold_also_spans_the_hour(self):
+        """The hold must reserve the whole hour, not just the first half."""
+        self._mock_flow()
+        book_lesson(
+            self.mock_client, "4584", "2026-08-03T13:00:00+02:00", duration_minutes=60
+        )
+
+        assert self.captured["hold"]["end_time"] == "2026-08-03T12:00:00.000Z"
 
     def test_teacher_id_coerced_to_string(self):
         self._mock_flow()

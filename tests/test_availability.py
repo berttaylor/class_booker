@@ -189,6 +189,81 @@ class TestGetAvailableTeachers(BaseTest):
         result = get_available_teachers(self.mock_client, "2026-08-03T13:00:00+02:00")
         assert len(result) == 1
 
+    def test_60min_requires_both_consecutive_slots(self):
+        """A teacher free only for the first half-hour cannot take a 60-min class."""
+        self._mock_tutors([{"id": 4584, "name": "Paula"}])
+        self._mock_calendar({"2026-08-08": [_slot("4584", "2026-08-08T11:00:00.000Z")]})
+
+        assert (
+            get_available_teachers(
+                self.mock_client, "2026-08-08T11:00:00+00:00", duration_minutes=60
+            )
+            == []
+        )
+
+    def test_60min_accepts_teacher_with_both_slots(self):
+        self._mock_tutors([{"id": 4584, "name": "Paula"}])
+        self._mock_calendar(
+            {
+                "2026-08-08": [
+                    _slot("4584", "2026-08-08T11:00:00.000Z"),
+                    _slot("4584", "2026-08-08T11:30:00.000Z"),
+                ]
+            }
+        )
+
+        result = get_available_teachers(
+            self.mock_client, "2026-08-08T11:00:00+00:00", duration_minutes=60
+        )
+        assert [t["id"] for t in result] == ["4584"]
+
+    def test_60min_rejects_when_second_half_is_held(self):
+        self._mock_tutors([{"id": 4584, "name": "Paula"}])
+        self._mock_calendar(
+            {
+                "2026-08-08": [
+                    _slot("4584", "2026-08-08T11:00:00.000Z"),
+                    _slot("4584", "2026-08-08T11:30:00.000Z", "held"),
+                ]
+            }
+        )
+
+        assert (
+            get_available_teachers(
+                self.mock_client, "2026-08-08T11:00:00+00:00", duration_minutes=60
+            )
+            == []
+        )
+
+    def test_60min_picks_only_teachers_with_full_hour(self):
+        """Two teachers free at the start; only one has the following half-hour."""
+        self._mock_tutors(
+            [{"id": 4584, "name": "Paula"}, {"id": 4629, "name": "Sergio"}]
+        )
+        self._mock_calendar(
+            {
+                "2026-08-08": [
+                    _slot("4584", "2026-08-08T11:00:00.000Z"),
+                    _slot("4629", "2026-08-08T11:00:00.000Z"),
+                    _slot("4629", "2026-08-08T11:30:00.000Z"),
+                ]
+            }
+        )
+
+        result = get_available_teachers(
+            self.mock_client, "2026-08-08T11:00:00+00:00", duration_minutes=60
+        )
+        assert [t["id"] for t in result] == ["4629"]
+
+    def test_30min_unaffected_by_missing_second_slot(self):
+        self._mock_tutors([{"id": 4584, "name": "Paula"}])
+        self._mock_calendar({"2026-08-08": [_slot("4584", "2026-08-08T11:00:00.000Z")]})
+
+        result = get_available_teachers(
+            self.mock_client, "2026-08-08T11:00:00+00:00", duration_minutes=30
+        )
+        assert len(result) == 1
+
     def test_no_match_at_different_time(self, calendar_response, tutors_page1_response):
         self.router.get("/booking/favorites/calendar").mock(
             return_value=httpx.Response(200, json=calendar_response)

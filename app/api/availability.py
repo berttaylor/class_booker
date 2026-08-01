@@ -1,4 +1,4 @@
-from datetime import datetime as dt
+from datetime import datetime as dt, timedelta
 from typing import Any, Dict, List
 
 import pytz
@@ -78,10 +78,16 @@ def get_teacher_slots(client: BookingClient, teacher_id: str) -> list:
     ]
 
 
-def get_available_teachers(client: BookingClient, lesson_datetime: str) -> list:
+def get_available_teachers(
+    client: BookingClient, lesson_datetime: str, duration_minutes: int = 30
+) -> list:
     """
     Returns a list of available teachers for a given lesson datetime.
     Each entry is a dict with 'id', 'name', and 'start_time_local'.
+
+    The calendar only ever advertises 30-minute slots, so a longer lesson
+    requires every consecutive half-hour it spans to be free — a teacher with
+    only the first half open cannot take a 60-minute class.
     """
     slots = _get_calendar_slots(client)
     if not slots:
@@ -90,6 +96,19 @@ def get_available_teachers(client: BookingClient, lesson_datetime: str) -> list:
     tutor_map = get_tutors_map(client)
     target_utc = normalize_datetime(lesson_datetime)
     local_tz = pytz.timezone(app_config.timezone)
+
+    # (tutor_id, normalised start) pairs that are open, for the span check below
+    open_slots = {
+        (str(s.get("tutor_id")), normalize_datetime(s.get("start_time", "")))
+        for s in slots
+        if s.get("status") == "available"
+    }
+
+    target_dt = dt.fromisoformat(target_utc)
+    required = [
+        normalize_datetime((target_dt + timedelta(minutes=offset)).isoformat())
+        for offset in range(0, duration_minutes, 30)
+    ]
 
     available_teachers = []
     seen = set()
@@ -104,6 +123,9 @@ def get_available_teachers(client: BookingClient, lesson_datetime: str) -> list:
         if teacher_id in seen:
             continue
         seen.add(teacher_id)
+
+        if not all((teacher_id, start) in open_slots for start in required):
+            continue
 
         name = tutor_map.get(teacher_id, {}).get("name", f"Teacher {teacher_id}")
         start_time_local = (
