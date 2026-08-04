@@ -11,6 +11,7 @@ Strategy:
 from datetime import datetime, date, timezone, timedelta
 from unittest.mock import MagicMock, patch
 from freezegun import freeze_time
+import pytest
 import pytz
 
 import app.services.scheduler as sched_module
@@ -1094,3 +1095,108 @@ class TestTeacherCache:
             assert "populate-teachers" in captured.out
         finally:
             logger.set_enabled(False)
+
+
+# ---------------------------------------------------------------------------
+# Run-state recording
+# ---------------------------------------------------------------------------
+
+
+class TestRunState:
+    """
+    The status panel trusts these records, so the outcome must be derived from
+    what the run actually did — not inferred from log levels.
+    """
+
+    def test_successful_booking_records_booked(self):
+        rules = make_rules(
+            weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"]
+        )
+
+        with patch.object(sched_module.runstate, "append") as append_fn:
+            run_due_with_mocks(
+                frozen_time="2026-04-08T10:29:00+00:00",
+                rules=rules,
+                available_teachers=[make_available("184", "Maria Garcia")],
+            )
+
+        record = append_fn.call_args[0][0]
+        assert record["outcome"] == "booked"
+        assert record["booked"] == 1
+        assert record["failed"] == 0
+        assert record["dry_run"] is False
+        assert record["bookings"] == ["[wed_13:00] Maria Garcia"]
+
+    def test_dry_run_does_not_count_as_booked(self):
+        """--force-soft must never look like a real booking on the panel."""
+        rules = make_rules(
+            weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"]
+        )
+
+        with patch.object(sched_module.runstate, "append") as append_fn:
+            run_due_with_mocks(
+                frozen_time="2026-04-08T10:29:00+00:00",
+                rules=rules,
+                available_teachers=[make_available("184", "Maria Garcia")],
+                force_soft=True,
+            )
+
+        record = append_fn.call_args[0][0]
+        assert record["booked"] == 0
+        assert record["dry_run"] is True
+        assert record["bookings"] == []
+
+    def test_no_teachers_available_records_failed(self):
+        """Logged at INFO, but it means a class went unbooked — so: failed."""
+        rules = make_rules(
+            weekday="wed", start_time="13:00", preferred_teachers=["Maria Garcia"]
+        )
+
+        with patch.object(sched_module.runstate, "append") as append_fn:
+            run_due_with_mocks(
+                frozen_time="2026-04-08T10:29:00+00:00",
+                rules=rules,
+                available_teachers=[],
+            )
+
+        record = append_fn.call_args[0][0]
+        assert record["outcome"] == "failed"
+        assert record["failed"] == 1
+
+    def test_crash_records_crashed_and_reraises(self):
+        """The traceback must still escape so the process exits non-zero."""
+        with freeze_time("2026-04-08T10:29:00+00:00"):
+            with (
+                patch.object(sched_module.runstate, "append") as append_fn,
+                patch.object(
+                    sched_module, "load_teacher_cache", return_value=FAKE_CACHE
+                ),
+                patch.object(
+                    sched_module,
+                    "load_active_schedules",
+                    return_value=[("test", make_rules())],
+                ),
+                patch.object(
+                    sched_module, "_run_schedule", side_effect=RuntimeError("boom")
+                ),
+                patch.object(sched_module, "send_push"),
+                patch.object(sched_module, "acquire_lock", return_value=MagicMock()),
+                patch.object(sched_module, "release_lock"),
+            ):
+                with pytest.raises(RuntimeError, match="boom"):
+                    run_due_process()
+
+        record = append_fn.call_args[0][0]
+        assert record["outcome"] == "crashed"
+        assert "RuntimeError: boom" in record["detail"]
+
+    def test_locked_run_writes_no_record(self):
+        """The loser must not overwrite the panel mid-booking."""
+        with freeze_time("2026-04-08T10:29:00+00:00"):
+            with (
+                patch.object(sched_module.runstate, "append") as append_fn,
+                patch.object(sched_module, "acquire_lock", return_value=None),
+            ):
+                run_due_process()
+
+        assert not append_fn.called

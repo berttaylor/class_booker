@@ -4,7 +4,14 @@ from pydantic import BaseModel, model_validator
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+BASE_DIR = Path(__file__).parent.parent
+
+# Absolute paths throughout: cwd-relative resolution silently yields empty
+# credentials and an empty teacher cache when the process starts anywhere other
+# than the project root, with no error raised.
+load_dotenv(BASE_DIR / ".env")
+
+DEFAULT_TEACHERS_CACHE = "data/teachers.json"
 
 
 class AppConfig(BaseModel):
@@ -22,10 +29,10 @@ class AppConfig(BaseModel):
 
 
 class Settings(BaseSettings):
-    config_path: Path = Path(__file__).parent.parent / "config.yaml"
+    config_path: Path = BASE_DIR / "config.yaml"
 
-    # Derived from the project directory name — no config needed
-    service_name: str = Path.cwd().name
+    # Fixed, not derived from cwd — in a container that would become "app".
+    service_name: str = "class_booker"
 
     # Secrets from .env
     teacher_sync_login_email: str | None = None
@@ -35,13 +42,13 @@ class Settings(BaseSettings):
     # When false, teachers_cache_path must be set to an absolute path pointing at the
     # primary clone's data/teachers.json.
     populate_teachers_enabled: bool = True
-    teachers_cache_path: str = "data/teachers.json"
+    teachers_cache_path: str = DEFAULT_TEACHERS_CACHE
 
     @model_validator(mode="after")
     def check_secondary_cache_path(self) -> "Settings":
         if (
             not self.populate_teachers_enabled
-            and self.teachers_cache_path == "data/teachers.json"
+            and self.teachers_cache_path == DEFAULT_TEACHERS_CACHE
         ):
             raise ValueError(
                 "POPULATE_TEACHERS=false requires TEACHERS_CACHE_PATH to be set to an "
@@ -49,11 +56,21 @@ class Settings(BaseSettings):
             )
         return self
 
+    @property
+    def teachers_cache_file(self) -> Path:
+        """
+        Absolute teacher cache path.
+
+        The raw setting stays relative so the validator above can spot the
+        untouched default; secondary clones override it with an absolute path.
+        """
+        return BASE_DIR / self.teachers_cache_path
+
     # Pushover notifications (optional)
     pushover_user_key: str | None = None
     pushover_api_token: str | None = None
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", extra="ignore")
 
 
 def load_app_config(path: Path) -> AppConfig:

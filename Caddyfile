@@ -1,0 +1,23 @@
+# Caddy is the only thing exposed to the internet. It terminates TLS, gets and
+# renews certificates automatically, and enforces Basic Auth before any request
+# reaches Flask — the app itself has no authentication.
+#
+# Generate the password hash with:
+#   docker run --rm caddy:2 caddy hash-password --plaintext 'your-password'
+# Use a long generated password from your password manager, and NOT the same one
+# as the booking site: this file guards those credentials.
+
+classes.bertbert.work {
+	basic_auth {
+		bert REPLACE_WITH_BCRYPT_HASH
+	}
+
+	reverse_proxy web:8008
+
+	encode gzip
+
+	log {
+		output stdout
+		format console
+	}
+}

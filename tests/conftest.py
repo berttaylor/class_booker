@@ -21,6 +21,25 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 # ---------------------------------------------------------------------------
+# Real-data guard
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _never_touch_real_teacher_cache(tmp_path, monkeypatch):
+    """
+    Redirect the teacher cache into tmp_path for every test.
+
+    data/teachers.json is real, gitignored, and only regenerable from the API,
+    so a test that writes to it destroys live data. Tests that need their own
+    location patch this again; this is the floor, not the mechanism.
+    """
+    monkeypatch.setattr(
+        "app.teachers.TEACHERS_CACHE_PATH", tmp_path / "data" / "teachers.json"
+    )
+
+
+# ---------------------------------------------------------------------------
 # HTTP client fixtures
 # ---------------------------------------------------------------------------
 

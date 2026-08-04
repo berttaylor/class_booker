@@ -20,6 +20,13 @@ pytest --cov=app
 
 # Run the CLI
 python main.py <command>
+
+# Local Docker stack — UI only, no auth, no TLS, no real bookings
+docker compose up web            # http://localhost:8008
+docker compose run --rm cron python main.py run-due --force-soft
+
+# Deploy (needs an ssh alias "booker")
+./deploy.sh
 ```
 
 ## Architecture
@@ -48,12 +55,21 @@ app/
     auth.py          — JWT validation, token cache, login()
     availability.py  — get_tutors_map(), get_teacher_slots(), get_available_teachers()
     booking.py       — get_bookings(), cancel_booking(), book_lesson()
+  logger.py          — JSONL event log (logs/events.jsonl)
+  runstate.py        — run outcome history (logs/runs.jsonl) for the status panel
+  notifications.py   — send_push() via Pushover
   services/
     session.py       — authed_client() context manager, ensure_fresh_token()
     scheduler.py     — run_due_process() + private helpers
   ui/
     calendar.py      — format_calendar()
-web.py               — Flask schedule editor (browser UI with validation)
+web.py               — Flask schedule editor + status panel
+Dockerfile           — one image for both the web and cron services
+compose.yml          — web (gunicorn) + cron (supercronic) + caddy (TLS/auth)
+compose.override.yml — local dev: exposes 8008, parks cron/caddy behind a profile
+Caddyfile            — HTTPS + Basic Auth for classes.bertbert.work
+crontab              — read by supercronic; :29/:59 run-due, 03:00 teacher sync
+deploy.sh            — ssh booker 'git pull && docker compose up -d --build'
 ```
 
 **Request flow:** CLI commands use `authed_client()` from `services/session.py` as a context manager — it creates a `BookingClient`, calls `login()`, sets the token, yields the client, and closes it on exit. All HTTP calls go through `BookingClient` → httpx → the API.
@@ -69,10 +85,21 @@ web.py               — Flask schedule editor (browser UI with validation)
   - `timezone`, `rules` — timezone and booking rules
   - Edit directly or via `python web.py`
 
-**Scheduled jobs** (three independent launchd jobs, all managed by `setup.sh`):
-- `run-due` (:29, :59) — reads local `scheduling_rules/bert.yml`, checks for due bookings, books.
-- `populate-teachers` (03:00 daily) — fetches tutors from the booking API, merges into `data/teachers.json`.
-- `web-interface` (always online) — browser UI for editing rules and viewing logs.
+**Deployment** (Docker Compose on a VPS at `classes.bertbert.work`; `setup.sh` and `runners/*.plist` are the superseded macOS launchd path):
+- **web** — gunicorn, 2 workers. Not port-published; only Caddy reaches it. The app has **no authentication of its own** and must never be exposed directly.
+- **cron** — `supercronic /app/crontab`. Same image and volumes as web. `:29`/`:59` → `run-due`, `03:00` → `populate-teachers`.
+- **caddy** — ports 80/443, automatic Let's Encrypt, Basic Auth. Certs live in a named volume; losing it means re-requesting and risking the rate limit.
+
+Volumes (all gitignored, so they must exist on the host): `scheduling_rules/`, `data/`, `logs/`, `cache/`, plus `.env`.
+
+`TZ=Europe/Madrid` is set in the Dockerfile. Booking arithmetic is UTC-internal, but the **cron trigger times are local** — without TZ the `:29`/`:59` windows fire in the wrong hour.
+
+Local development: `docker compose up web` → `http://localhost:8008`, no auth, no TLS. `compose.override.yml` keeps cron and caddy behind a `manual` profile so a laptop doesn't book real classes; `deploy.sh` passes `-f compose.yml` explicitly so production ignores the override.
+
+**Monitoring** is layered, because each layer misses what the others catch:
+- Pushover (`app/notifications.py`) — booking/auth failures and crashes, pushed immediately.
+- Healthchecks.io — the crontab pings `HC_PING_URL` after every successful `run-due`. A non-zero exit skips the ping. This is the only layer that catches the box being dead, since a dead container cannot notify anything.
+- Status panel staleness warning — same failure, but only when someone looks.
 
 **`BookingRule` schema** (`app/rules.py`): each rule has `weekday` (single string, e.g. `"mon"`), `start_time` (HH:MM, on the hour or half-hour), `slots` (1 or 2), and `preferred_teachers` (non-empty list of teacher name strings). An optional `label` can be provided; if missing, the `id` property is computed as `f"{weekday}_{start_time}"`. `slots` is a **duration multiplier, not a repeat count**: `duration_minutes` is `30 * slots`, so a 2-slot rule is one 60-minute booking rather than two consecutive 30-minute ones (the old API forced the split; this one takes `duration_minutes`). `slot_times()` therefore always returns a single start time. Pydantic validators enforce all constraints at load time.
 
@@ -80,11 +107,29 @@ web.py               — Flask schedule editor (browser UI with validation)
 
 **Scheduler** (`services/scheduler.py` → `run_due_process`): two-phase design — Phase 1 uses the local clock only to check if any rule is due (no API calls); Phase 2 authenticates and syncs server time only when a booking is actually due. `_evaluate_rules` produces one entry per rule occurrence, keyed by `slot_key` (the rule id, e.g. `wed_13:00`), returning `(rule, slot_key)` tuples in `due_rules` and dicts keyed by `slot_key`. Uses a file lock (`.run_due.lock`) to prevent concurrent runs.
 
+**Run state** (`app/runstate.py` → `logs/runs.jsonl`, one JSON object per run): backs the status panel. web and cron are separate containers, so a shared file is the only channel between them; readers therefore never raise (a missing or torn file yields `{}`/`[]`).
+
+Outcomes are derived from `_counts` — tallies incremented at the sites that already know what happened — never by re-parsing log messages. Precedence: `locked` → `crashed` → `blocked` → `failed` → `booked` → `nothing_due`. Two consequences worth knowing:
+- **Partial success reports `failed`.** One schedule booking while another fails records `booked: 1, failed: 1` with outcome `failed`. A green light that hides a failure is the only outcome that costs a lesson.
+- **`No suitable teachers available` is counted as a failure but still logged at INFO.** The counter is the source of truth; the log level is cosmetic and was left alone to avoid recolouring thousands of historical rows.
+
+`--force-soft` cannot inflate the booked count: `_attempt_booking` returns at the `[DRY RUN]` branch before reaching the `BOOKED` site. A `locked` run deliberately writes **no** record, so the loser of a lock race can't clobber the panel while a real booking is mid-flight. A crash records `crashed`, pushes, and **re-raises** — the traceback must still reach stderr and the exit code must stay non-zero so the healthcheck ping is skipped.
+
+`next_cron_run()` hardcodes the `:29`/`:59` pair from `crontab`. **Change both together.**
+
+**Logging** (`app/logger.py`): appends one JSON object per line to `logs/events.jsonl`. Append-only, so a killed process can at worst leave a single torn line, which the reader skips. `logs/main.json` is the pre-JSONL archive and stays readable in the log viewer; `view_log()` uses `deque(f, maxlen=1000)` so the tail renders without parsing the whole file.
+
 The booking window is `lesson - 7 days - 30 min`, computed in **UTC** and converted back to local time. Doing that arithmetic on the local wall clock shifts the window by an hour across a DST boundary — see `TestBookingWindowDST`.
 
 `_is_already_booked` compares **time ranges**, not start times: recurring classes booked on the website are 60 minutes long, so a rule starting partway through one would otherwise double-book. It checks every booking regardless of date, so a lesson crossing midnight is caught.
 
-**Schedule editor** (`web.py`): Flask app serving a CodeMirror YAML editor at `http://localhost:8008`. Validates against `SchedulingRules` schema, checks teacher names against `data/teachers.json`, and detects duplicate rule IDs before saving.
+**Schedule editor and status panel** (`web.py`): Flask app serving a CodeMirror YAML editor. Validates against `SchedulingRules` schema, checks teacher names against `data/teachers.json`, and detects duplicate rule IDs before saving.
+
+The index page renders the run history from `runs.jsonl` — last run, outcome, next check, next booking window, last booking, plus a table of recent runs. **Server-rendered Jinja only, no JavaScript**: refresh the page for current state. Pushover covers anything urgent, so live-updating the panel earned nothing and the SSE endpoint it needed was removed.
+
+Templates fetch CodeMirror and DataTables from CDNs, so the editor and log viewer degrade without outbound internet access.
+
+Schedule and log links must **not** capitalise the URL (`/schedules/{{ name }}`, display text capitalised separately): the files are lowercase and Linux is case-sensitive, so `/schedules/Bert` 404s in the container even though it worked on macOS.
 
 ## Testing
 
@@ -95,5 +140,9 @@ Tests use `respx` to mock all `httpx` calls and `pytest-socket` to block real ne
 When adding HTTP-touching test classes, inherit `BaseTest` and use `self.mock_client`/`self.router`. If tests need an authenticated client, call `self.mock_client.set_token(...)` in `setup_method`.
 
 Scheduler tests patch `sched_module` (imported as `import app.services.scheduler as sched_module`) and must include `patch.object(sched_module, "is_token_expired", return_value=False)` to prevent the post-wait re-auth check from hitting the network.
+
+**`conftest.py` has an autouse fixture redirecting `app.teachers.TEACHERS_CACHE_PATH` into `tmp_path` for every test.** `data/teachers.json` is real, gitignored, and only regenerable from the API, so a test that writes to it destroys live data — which happened once when the path became absolute while tests still relied on `monkeypatch.chdir` to redirect it. Never remove that fixture; patch over it if a test needs its own location.
+
+Run-state tests patch `sched_module.runstate.append` and assert on the record dict rather than touching the filesystem. `app/runstate.py` and `app/logger.py` both no-op under `PYTEST_CURRENT_TEST`, so tests never write to `logs/`.
 
 Test fixtures (`calendar_response`, `tutors_page1_response`, `tutors_page2_response`, `my_classes_response`, `activities_response`) are loaded from JSON files in `tests/fixtures/` and injected via `conftest.py`. Most were captured from real API responses.

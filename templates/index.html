@@ -17,6 +17,13 @@
     .status-running { background: #1a4731; color: #4caf82; }
     .status-stopped { background: #47311a; color: #fbbf24; }
     .status-not-loaded { background: #333; color: #666; }
+    .status-error { background: #4a1a1a; color: #f87171; }
+    .stale { color: #f87171; font-weight: 600; }
+    .empty { font-size: 13px; color: #666; }
+    table.runs { width: 100%; border-collapse: collapse; font-size: 12px; color: #888; }
+    table.runs th { text-align: left; font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: 0.06em; color: #666; padding: 6px 8px; border-bottom: 1px solid #0f3460; }
+    table.runs td { padding: 6px 8px; border-bottom: 1px solid #16213e; }
+    table.runs tr:last-child td { border-bottom: none; }
     a { display: inline-block; padding: 8px 16px; background: #16213e; border: 1px solid #0f3460; border-radius: 6px; color: #eee; text-decoration: none; font-size: 14px; }
     a:hover { background: #0f3460; }
   </style>
@@ -27,7 +34,7 @@
     <h2>Schedules</h2>
     <ul>
       {% for name in schedules %}
-      <li><a href="/schedules/{{ name | capitalize }}">{{ name | capitalize }}</a></li>
+      <li><a href="/schedules/{{ name }}">{{ name | capitalize }}</a></li>
       {% endfor %}
     </ul>
   </section>
@@ -35,115 +42,86 @@
     <h2>Logs</h2>
     <ul>
       {% for name in logs %}
-      <li><a href="/logs/{{ name | capitalize }}">{{ name | capitalize }}</a></li>
+      <li><a href="/logs/{{ name }}">{{ name | capitalize }}</a></li>
       {% endfor %}
     </ul>
   </section>
+  {% set OUTCOME_CLASS = {
+      'booked': 'status-running',
+      'nothing_due': 'status-running',
+      'failed': 'status-error',
+      'crashed': 'status-error',
+      'blocked': 'status-stopped',
+      'locked': 'status-stopped'
+  } %}
   <section>
-    <h2>System Status</h2>
+    <h2>Status</h2>
     <ul>
       <li class="status-card">
-        <span>Internet Access</span>
-        <span id="internet-badge" class="status-badge {% if system.internet %}status-running{% else %}status-stopped{% endif %}">
-          {% if system.internet %}Online{% else %}Offline{% endif %}
+        <span>Last run</span>
+        {% if last %}
+        <span class="{% if stale %}stale{% endif %}">
+          {{ last.finished_at }}
+          {% if stale %}⚠ no run in over {{ stale_after }} min — scheduler may be down{% endif %}
+        </span>
+        {% else %}
+        <span>Never run</span>
+        {% endif %}
+      </li>
+      {% if last %}
+      <li class="status-card">
+        <span>Result</span>
+        <span class="status-badge {{ OUTCOME_CLASS.get(last.outcome, 'status-not-loaded') }}">
+          {{ last.outcome }}{% if last.dry_run %} (dry run){% endif %}
         </span>
       </li>
+      {% if last.detail %}
+      <li class="status-card"><span>Detail</span><span>{{ last.detail }}</span></li>
+      {% endif %}
+      {% endif %}
+      <li class="status-card"><span>Next check</span><span>{{ next_cron }}</span></li>
       <li class="status-card">
-        <span>Network Connection</span>
-        <span id="connection-info" style="font-size: 11px; color: #666; margin-left: auto;">
-          {{ system.connection.type }} ({{ system.connection.name }})
+        <span>Next booking window</span>
+        <span>{{ last.next_window or "—" }}</span>
+      </li>
+      <li class="status-card">
+        <span>Last booking</span>
+        <span>
+          {% if last_booking %}
+          {{ last_booking.finished_at }} — {{ last_booking.bookings | join(', ') }}
+          {% else %}
+          None recorded
+          {% endif %}
         </span>
       </li>
     </ul>
   </section>
   <section>
-    <h2>Services</h2>
-    <ul id="services-list">
-      {% for s in services %}
-      <li class="status-card" data-label="{{ s.label }}">
-        <span>{{ s.name }} <span class="pid-info">{% if s.pid %}<small style="color:#444; margin-left: 8px;">(PID: {{ s.pid }})</small>{% endif %}</span></span>
-        <span class="status-badge {% if s.status == 'Running' %}status-running{% elif s.status == 'Not loaded' %}status-not-loaded{% else %}status-stopped{% endif %}">
-          {{ s.status }}
-        </span>
-      </li>
-      {% endfor %}
-    </ul>
+    <h2>Recent runs</h2>
+    {% if runs %}
+    <table class="runs">
+      <thead>
+        <tr><th>Run</th><th>Finished</th><th>Outcome</th><th>Booked</th><th>Failed</th><th>Took</th></tr>
+      </thead>
+      <tbody>
+        {% for r in runs %}
+        <tr>
+          <td>{{ r.run_id }}</td>
+          <td>{{ r.finished_at }}</td>
+          <td>
+            <span class="status-badge {{ OUTCOME_CLASS.get(r.outcome, 'status-not-loaded') }}">{{ r.outcome }}</span>
+            {% if r.dry_run %}<small>dry</small>{% endif %}
+          </td>
+          <td>{{ r.booked }}</td>
+          <td>{{ r.failed }}</td>
+          <td>{{ r.duration_s }}s</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No runs recorded yet.</p>
+    {% endif %}
   </section>
-  <script>
-    let source = null;
-
-    function updateStatusUI(data) {
-      // Update Internet Access
-      const internetBadge = document.getElementById('internet-badge');
-      if (internetBadge) {
-        internetBadge.textContent = data.system.internet ? 'Online' : 'Offline';
-        internetBadge.className = 'status-badge ' + (data.system.internet ? 'status-running' : 'status-stopped');
-      }
-
-      // Update Connection Info
-      const connectionInfo = document.getElementById('connection-info');
-      if (connectionInfo) {
-        connectionInfo.textContent = `${data.system.connection.type} (${data.system.connection.name})`;
-      }
-
-      // Update Services
-      const servicesList = document.getElementById('services-list');
-      if (servicesList && data.services) {
-        data.services.forEach(s => {
-          const li = servicesList.querySelector(`li[data-label="${s.label}"]`);
-          if (li) {
-            const nameSpan = li.querySelector('span:first-child');
-            if (nameSpan) {
-              nameSpan.innerHTML = `${s.name} <span class="pid-info">${s.pid ? `<small style="color:#444; margin-left: 8px;">(PID: ${s.pid})</small>` : ''}</span>`;
-            }
-            const badge = li.querySelector('.status-badge');
-            if (badge) {
-              badge.textContent = s.status;
-              let cls = 'status-badge ';
-              if (s.status === 'Running') cls += 'status-running';
-              else if (s.status === 'Not loaded') cls += 'status-not-loaded';
-              else cls += 'status-stopped';
-              badge.className = cls;
-            }
-          }
-        });
-      }
-    }
-
-    function connect() {
-      if (source) return;
-      source = new EventSource("/api/status/stream");
-      source.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          updateStatusUI(data);
-        } catch (err) {
-          console.error("Error parsing status update:", err);
-        }
-      };
-      source.onerror = (e) => {
-        disconnect();
-        setTimeout(connect, 5000);
-      };
-    }
-
-    function disconnect() {
-      if (source) {
-        source.close();
-        source = null;
-      }
-    }
-
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden) {
-        disconnect();
-      } else {
-        connect();
-      }
-    });
-
-    // Initial connect
-    connect();
-  </script>
 </body>
 </html>

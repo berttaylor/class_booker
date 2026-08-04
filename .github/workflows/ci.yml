@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, docker-deploy]
   pull_request:
     branches: [main]
 
@@ -29,3 +29,24 @@ jobs:
         run: pytest
         env:
           PYTHONPATH: .
+
+  docker:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # compose.yml declares env_file: .env, which is gitignored — create an
+      # empty one so compose can parse the file.
+      - name: Stub .env
+        run: cp .env.example .env
+
+      # The image is the deployment artefact, so a broken Dockerfile should fail
+      # CI rather than the deploy.
+      - name: Build image
+        run: docker compose -f compose.yml build web
+
+      - name: Smoke-test the container
+        run: |
+          docker compose -f compose.yml run --rm --no-deps web \
+            python -c "import web, app.runstate; print('imports OK')"

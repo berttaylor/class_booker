@@ -39,52 +39,19 @@ def _ensure_logs():
 
 
 def _append_to_log(log_name, event):
+    """
+    Append one event as a JSON line.
+
+    One object per line rather than a JSON array: appending is a single write
+    with no read-modify-write, so a killed process can at worst leave one torn
+    line instead of corrupting the whole file (the reader skips bad lines).
+    """
     if "PYTEST_CURRENT_TEST" in os.environ:
         return
 
     _ensure_logs()
-    path = LOG_DIR / f"{log_name}.json"
-
-    # If file doesn't exist or is not a valid JSON array, start a new one
-    if not path.exists() or path.stat().st_size < 2:
-        with open(path, "w") as f:
-            json.dump([event], f, indent=2)
-        return
-
-    # Efficiently append to JSON array
-    try:
-        with open(path, "rb+") as f:
-            f.seek(0, os.SEEK_END)
-            pos = f.tell() - 1
-            # Find the last ']' from the end
-            while pos >= 0:
-                f.seek(pos)
-                if f.read(1) == b"]":
-                    f.seek(pos)
-                    # Prepare the new event string
-                    event_json = json.dumps(event, indent=2)
-                    # Indent the event_json to match the array style (2 spaces)
-                    indented_event = "  " + event_json.replace("\n", "\n  ")
-                    new_content = ",\n" + indented_event + "\n]"
-                    f.write(new_content.encode("utf-8"))
-                    f.truncate()
-                    return
-                pos -= 1
-
-            # If we didn't find ']', it's invalid JSON, start fresh
-            f.seek(0)
-            f.truncate()
-            json.dump([event], f, indent=2)
-    except Exception:
-        # Fallback to full read/write if something goes wrong
-        try:
-            with open(path, "r") as f:
-                data = json.load(f)
-        except Exception:
-            data = []
-        data.append(event)
-        with open(path, "w") as f:
-            json.dump(data, f, indent=2)
+    with open(LOG_DIR / f"{log_name}.jsonl", "a") as f:
+        f.write(json.dumps(event) + "\n")
 
 
 def log(message, level="INFO", schedule=None, run_id=None, **kwargs):
@@ -111,7 +78,9 @@ def log(message, level="INFO", schedule=None, run_id=None, **kwargs):
     }
     event.update(kwargs)
 
-    _append_to_log("main", event)
+    # "events", not "main": logs/main.json is the pre-JSONL archive and stays
+    # readable in the log viewer alongside this.
+    _append_to_log("events", event)
 
 
 def info(message, schedule=None, run_id=None, **kwargs):

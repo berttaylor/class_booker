@@ -22,11 +22,27 @@ from app.rules import (
 )
 from app.teachers import load_teacher_cache, validate_rules_against_cache
 from app.utils import get_server_time
-from app import logger
+from app import logger, runstate
 
-CACHE_DIR = Path(__file__).parent.parent.parent / "cache"
+BASE_DIR = Path(__file__).parent.parent.parent
+CACHE_DIR = BASE_DIR / "cache"
 
-LOCK_FILE = ".run_due.lock"
+# Absolute, so the lock is the same file regardless of working directory —
+# a cwd-relative path silently gives concurrent runs separate locks.
+LOCK_FILE = str(BASE_DIR / ".run_due.lock")
+
+# Per-run tallies, reset at the top of run_due_process. Incremented at the
+# points that already know the outcome, so the panel never has to infer it by
+# re-reading log messages.
+_counts: dict = {}
+
+
+def _reset_counts() -> None:
+    _counts.clear()
+    _counts.update({"booked": 0, "failed": 0, "next_window": None, "bookings": []})
+
+
+_reset_counts()
 
 # ---------------------------------------------------------------------------
 # Lock management
@@ -361,6 +377,10 @@ def _attempt_booking(
 
             if res.get("status") == "success":
                 logger.info(f"{prefix}BOOKED: {tname} ({tid})")
+                # Unreachable under --force-soft: that returns above, so dry
+                # runs can never inflate the booked count.
+                _counts["booked"] += 1
+                _counts["bookings"].append(f"[{slot_key}] {tname}")
                 approved_bookings.append(
                     {
                         "staff_id": tid,
@@ -409,6 +429,7 @@ def _run_schedule(
     try:
         validate_rules_against_cache(rules_data, cache)
     except ValueError as e:
+        _counts["failed"] += 1
         logger.error(f"Schedule error: {e}", schedule=schedule_name)
         send_push(f"[{schedule_name}] Schedule validation failed: {e}", priority=1)
         return
@@ -439,10 +460,15 @@ def _run_schedule(
             minutes, seconds = divmod(remainder, 60)
             countdown = f"{hours}h {minutes}m {seconds}s"
             slot_key = next_rule.id
+            next_window = next_open_dt.strftime("%Y-%m-%d %H:%M")
+            # Earliest window across all schedules — that's the one the panel
+            # counts down to.
+            if not _counts["next_window"] or next_window < _counts["next_window"]:
+                _counts["next_window"] = next_window
             logger.info(
                 f"Nothing to book - booking in {countdown} (for {slot_key})",
                 schedule=schedule_name,
-                next_window=next_open_dt.strftime("%Y-%m-%d %H:%M"),
+                next_window=next_window,
                 slot_key=slot_key,
             )
         else:
@@ -466,6 +492,7 @@ def _run_schedule(
     try:
         token = login(client, credentials, cache_file)
         if not token:
+            _counts["failed"] += 1
             logger.error("Auth: FAILED — check credentials", schedule=schedule_name)
             send_push(
                 f"[{schedule_name}] Authentication failed — check credentials in YAML",
@@ -530,6 +557,10 @@ def _run_schedule(
                 duration,
             )
             if not candidates:
+                # Logged at INFO for historical continuity, but this is a real
+                # failure — the class does not get booked. The counter, not the
+                # log level, is what the status panel trusts.
+                _counts["failed"] += 1
                 logger.info(
                     f"[{slot_key}] No suitable teachers available — skipping",
                     schedule=schedule_name,
@@ -581,6 +612,7 @@ def _run_schedule(
                 duration_minutes=duration,
             )
             if not success:
+                _counts["failed"] += 1
                 logger.error(
                     f"[{slot_key}] FAILED: all teachers exhausted",
                     schedule=schedule_name,
@@ -601,11 +633,58 @@ def _run_schedule(
 # ---------------------------------------------------------------------------
 
 
+def _derive_outcome() -> str:
+    """
+    Classify the run from the tallies.
+
+    Order matters: a run that booked one class and failed another reports
+    'failed'. A green light that hides a failure is the only outcome that
+    actually costs a lesson.
+    """
+    if _counts["failed"]:
+        return "failed"
+    if _counts["booked"]:
+        return "booked"
+    return "nothing_due"
+
+
+def _record(
+    run_id: str,
+    started: dt,
+    outcome: str | None,
+    dry_run: bool,
+    detail: str = "",
+) -> None:
+    """Write one run record. outcome=None means derive it from the tallies."""
+    finished = dt.now()
+    runstate.append(
+        {
+            "run_id": run_id,
+            "started_at": started.strftime(runstate.TIME_FMT),
+            "finished_at": finished.strftime(runstate.TIME_FMT),
+            "duration_s": round((finished - started).total_seconds(), 1),
+            "outcome": outcome or _derive_outcome(),
+            "booked": _counts["booked"],
+            "failed": _counts["failed"],
+            "dry_run": dry_run,
+            "next_window": _counts["next_window"],
+            "detail": detail,
+            "bookings": list(_counts["bookings"]),
+        }
+    )
+
+
 def run_due_process(force: bool = False, force_soft: bool = False):
     run_id = dt.now().strftime("%y%m%d%H%M%S")
     logger.set_run_id(run_id)
+    started = dt.now()
+    _reset_counts()
+
     lock_f = acquire_lock()
     if not lock_f:
+        # Deliberately no record: the run holding the lock may be mid-booking
+        # inside _wait_for_window, and the loser must not overwrite the panel
+        # with 'locked' while a real booking is in flight.
         logger.warning("Another instance is already running. Exiting.")
         return
 
@@ -613,15 +692,31 @@ def run_due_process(force: bool = False, force_soft: bool = False):
         cache = load_teacher_cache()
         if not cache:
             logger.error("No teachers cache — run: python main.py populate-teachers")
+            _record(run_id, started, "blocked", force_soft, detail="no teacher cache")
             return
 
         schedules = load_active_schedules()
         if not schedules:
             logger.warning("No active schedules found in scheduling_rules/")
+            _record(
+                run_id, started, "blocked", force_soft, detail="no active schedules"
+            )
             return
 
-        for schedule_name, rules_data in schedules:
-            _run_schedule(schedule_name, rules_data, cache, force, force_soft)
+        try:
+            for schedule_name, rules_data in schedules:
+                _run_schedule(schedule_name, rules_data, cache, force, force_soft)
+        except Exception as e:
+            # Re-raised below: the traceback still has to reach stderr and the
+            # process still has to exit non-zero, so the healthcheck ping is
+            # skipped and the dead-man's switch fires.
+            detail = f"{type(e).__name__}: {e}"
+            logger.error(f"Run crashed: {detail}")
+            send_push(f"Class booker crashed: {detail}", priority=1)
+            _record(run_id, started, "crashed", force_soft, detail=detail)
+            raise
+
+        _record(run_id, started, None, force_soft)
 
     finally:
         release_lock(lock_f)

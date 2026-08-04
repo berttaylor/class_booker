@@ -1,13 +1,12 @@
 import json
 from datetime import date
-from pathlib import Path
 
 from app import logger
 from app.client import BookingClient
 from app.api.availability import get_tutors_map
 from app.config import settings
 
-TEACHERS_CACHE_PATH = Path(settings.teachers_cache_path)
+TEACHERS_CACHE_PATH = settings.teachers_cache_file
 
 
 def load_teacher_cache() -> dict:

@@ -14,26 +14,60 @@ Python CLI tool that automates Spanish class booking by calling the booking plat
     ```bash
     pip install -r requirements.txt
     ```
-4.  Run the setup script — this creates your `.env`, `scheduling_rules/bert.yml`, and installs three scheduled jobs:
-    ```bash
-    ./setup.sh
-    ```
-5.  Fill in `.env` with the master credentials (used by `populate-teachers`) and optional Pushover tokens. Then fill in your per-account booking credentials in `scheduling_rules/bert.yml` under `credentials:`.
-6.  Fetch the teacher list and create `data/teachers.json` (required before `run-due` will work):
+4.  Copy `.env.example` to `.env` and fill in the master credentials (used by `populate-teachers`), plus optional Pushover and Healthchecks tokens. Then create `scheduling_rules/<name>.yml` with your per-account booking credentials under `credentials:`.
+5.  Fetch the teacher list and create `data/teachers.json` (required before `run-due` will work):
     ```bash
     python main.py populate-teachers
     ```
-7.  Configure `config.yaml` if needed (defaults provided for worldsacross.com).
+6.  Configure `config.yaml` if needed (defaults provided for worldsacross.com).
 
-### Scheduled jobs
+## Deployment
 
-`setup.sh` installs three independent launchd jobs:
+Runs as three Docker Compose services. Both locally and on the VPS, the whole schedule lives in the repo — nothing is installed on the host but Docker.
 
-| Job | Schedule | Responsibility |
-|---|---|---|
-| `run-due` | Every hour at :29 and :59 | Reads local `scheduling_rules/bert.yml`, checks for due bookings, books. |
-| `populate-teachers` | Daily at 03:00 | Fetches tutors from the booking API, merges into `data/teachers.json`. |
-| `web-interface` | Always online | Browser UI for editing rules and viewing logs. |
+| Service | What it does |
+|---|---|
+| `web` | gunicorn serving the editor and status panel. Not port-published; only Caddy reaches it. |
+| `cron` | supercronic running `crontab`: `run-due` at :29/:59, `populate-teachers` at 03:00. |
+| `caddy` | HTTPS (automatic Let's Encrypt) and Basic Auth on ports 80/443. |
+
+### Local
+
+```bash
+docker compose up web       # http://localhost:8008 — no auth, no TLS
+docker compose run --rm cron python main.py run-due --force-soft
+```
+
+`compose.override.yml` keeps `cron` and `caddy` behind a `manual` profile so a development machine doesn't book real classes or request certificates.
+
+### VPS (one-time)
+
+1.  Create the box (Hetzner CX22 is plenty) with a firewall allowing **only 22, 80, 443**. Port 8008 is never published.
+2.  Harden SSH: keys only (`PasswordAuthentication no`), root login disabled, and enable `unattended-upgrades`.
+3.  Point DNS at it: an `A` record for `classes.bertbert.work`. On Cloudflare set it to **DNS-only (grey cloud)** — the orange-cloud proxy terminates TLS itself and breaks Caddy's ACME challenge.
+4.  Install Docker, then `git clone` this repo to `/srv/class_booker`.
+5.  Generate a Basic Auth hash and paste it into `Caddyfile`:
+    ```bash
+    docker run --rm caddy:2 caddy hash-password --plaintext 'a-long-generated-password'
+    ```
+    Use a password manager. **Not** the same password as the booking site — this is what guards those credentials.
+6.  Copy the secrets and schedules across (they're gitignored, so they aren't in the clone):
+    ```bash
+    scp .env booker:/srv/class_booker/
+    scp scheduling_rules/*.yml booker:/srv/class_booker/scheduling_rules/
+    scp data/teachers.json booker:/srv/class_booker/data/
+    ```
+7.  Start it: `ssh booker 'cd /srv/class_booker && docker compose -f compose.yml up -d --build'`
+
+Thereafter, deploy with `./deploy.sh` (needs an `ssh` alias named `booker`).
+
+### Monitoring
+
+Three layers, because each catches what the others can't:
+
+- **Pushover** — booking failures, auth failures, and crashes, pushed immediately.
+- **Healthchecks.io** — set `HC_PING_URL` in `.env`; the crontab pings it after every successful `run-due`. If pings stop, Healthchecks alerts you. This is the only layer that catches the whole box being dead, since a dead container can't notify anything.
+- **Status panel** — the index page flags a stale last-run, but only when you look at it.
 
 ### Rule format
 
@@ -141,9 +175,13 @@ python main.py server-time
 
 Edit and validate the schedule in a browser:
 ```bash
-python web.py
+docker compose up web
 # then open http://localhost:8008
 ```
+
+The index page also shows the run history: last run and outcome, when the next
+check is due, the next booking window, and a table of recent runs. Refresh for
+current state — it's server-rendered with no JavaScript.
 
 ## Features
 
@@ -154,4 +192,6 @@ python web.py
 *   **Automated Booking**: Perform lesson booking for a specific teacher and time.
 *   **Booking Management**: List upcoming classes and cancel existing bookings.
 *   **Automated Scheduling**: Automatically book lessons based on rules when the booking window opens using `run-due`.
-*   **Schedule Editor**: Browser-based YAML editor with validation at `python web.py`.
+*   **Schedule Editor**: Browser-based YAML editor with validation.
+*   **Run History**: Every run records its outcome to `logs/runs.jsonl`, surfaced on the status panel with a warning when the scheduler goes quiet.
+*   **Notifications**: Pushover alerts on failures and crashes; optional Healthchecks.io dead-man's switch for whole-host failure.

@@ -1,0 +1,14 @@
+# Read by supercronic in the cron container. Times are container-local, which
+# is TZ=Europe/Madrid (set in the Dockerfile) — not UTC.
+#
+# next_cron_run() in app/runstate.py hardcodes the :29/:59 pair to tell the web
+# UI when the next check is due. Change both together.
+
+# Book due lessons. The window opens at lesson - 7d - 30min, so checking twice
+# an hour is enough to catch every window.
+# The ping is a dead-man's switch: on a non-zero exit it is skipped, and
+# Healthchecks alerts when pings stop arriving. Unset HC_PING_URL disables it.
+29,59 * * * * cd /app && python main.py run-due && { [ -z "$HC_PING_URL" ] || curl -fsS -m 10 -o /dev/null "$HC_PING_URL"; }
+
+# Refresh the teacher name -> id cache.
+0 3 * * * cd /app && python main.py populate-teachers

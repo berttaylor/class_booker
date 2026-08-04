@@ -9,6 +9,9 @@ from typing import List
 
 VALID_WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
+# Absolute so schedule discovery works regardless of working directory.
+SCHEDULING_RULES_DIR = Path(__file__).parent.parent / "scheduling_rules"
+
 BOOKING_OPEN_OFFSET_DAYS = 7
 BOOKING_OPEN_OFFSET_MINUTES = 30
 BOOKING_PRECHECK_LEAD_SECONDS = 120
@@ -136,7 +139,7 @@ def load_scheduling_rules(path: str = "scheduling_rules/bert.yml") -> Scheduling
 
 
 def load_active_schedules(
-    directory: str = "scheduling_rules",
+    directory: str | Path = SCHEDULING_RULES_DIR,
 ) -> list[tuple[str, SchedulingRules]]:
     """
     Discovers all .yml files in directory, loads each, and returns

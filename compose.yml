@@ -1,0 +1,46 @@
+# Three services from one image: the web UI, the scheduler, and the TLS/auth
+# front door. Local development uses compose.override.yml, which docker compose
+# picks up automatically.
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    # No ports: — only caddy may reach this. The app has no auth of its own.
+    expose:
+      - "8008"
+    env_file: .env
+    volumes:
+      - ./scheduling_rules:/app/scheduling_rules
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./cache:/app/cache
+
+  cron:
+    build: .
+    restart: unless-stopped
+    command: supercronic /app/crontab
+    env_file: .env
+    volumes:
+      - ./scheduling_rules:/app/scheduling_rules
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./cache:/app/cache
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Named volume, not bind: losing it means re-requesting certificates and
+      # risking the Let's Encrypt rate limit.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+volumes:
+  caddy_data:
+  caddy_config:

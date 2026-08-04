@@ -47,27 +47,40 @@ def make_cache(*teachers: tuple) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _use_tmp_cache(monkeypatch, tmp_path):
+    """
+    Point the cache at tmp_path.
+
+    Patches the module constant rather than chdir-ing: the real path is absolute
+    so that it cannot silently resolve elsewhere, and the tests should exercise
+    that same resolution.
+    """
+    path = tmp_path / "data" / "teachers.json"
+    monkeypatch.setattr("app.teachers.TEACHERS_CACHE_PATH", path)
+    return path
+
+
 class TestLoadTeacherCache:
     def test_returns_empty_dict_if_missing(self, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)
+        _use_tmp_cache(monkeypatch, tmp_path)
         assert load_teacher_cache() == {}
 
     def test_returns_cache_if_present(self, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)
+        path = _use_tmp_cache(monkeypatch, tmp_path)
         data = {"updated": "2026-01-01", "teachers": {"Maria Garcia": {"id": 184}}}
-        (tmp_path / "data").mkdir()
-        (tmp_path / "data" / "teachers.json").write_text(json.dumps(data))
+        path.parent.mkdir()
+        path.write_text(json.dumps(data))
         assert load_teacher_cache() == data
 
 
 class TestSaveTeacherCache:
     def test_writes_file_with_today_date(self, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)
+        path = _use_tmp_cache(monkeypatch, tmp_path)
         from freezegun import freeze_time
 
         with freeze_time("2026-04-03"):
             save_teacher_cache({"teachers": {}})
-        result = json.loads((tmp_path / "data" / "teachers.json").read_text())
+        result = json.loads(path.read_text())
         assert result["updated"] == "2026-04-03"
 
 
@@ -78,10 +91,10 @@ class TestSaveTeacherCache:
 
 class TestPopulateTeachers:
     def _run(self, tmp_path, monkeypatch, tutor_map, existing_cache=None):
-        monkeypatch.chdir(tmp_path)
+        path = _use_tmp_cache(monkeypatch, tmp_path)
         if existing_cache is not None:
-            (tmp_path / "data").mkdir(exist_ok=True)
-            (tmp_path / "data" / "teachers.json").write_text(json.dumps(existing_cache))
+            path.parent.mkdir(exist_ok=True)
+            path.write_text(json.dumps(existing_cache))
 
         from app.client import BookingClient
 
@@ -90,7 +103,7 @@ class TestPopulateTeachers:
         with patch("app.teachers.get_tutors_map", return_value=tutor_map):
             populate_teachers(client)
 
-        return json.loads((tmp_path / "data" / "teachers.json").read_text())
+        return json.loads(path.read_text())
 
     def test_creates_cache_from_scratch(self, tmp_path, monkeypatch):
         tutor_map = {

@@ -1,31 +1,23 @@
 """
-Schedule editor web UI.
-Run with: python web.py
-Then open http://localhost:8008/schedules/bert in your browser.
+Schedule editor and status web UI.
+
+Served by gunicorn in the container; see compose.yml. Runs behind Caddy, which
+terminates TLS and enforces Basic Auth — this app has no auth of its own and
+must never be exposed directly.
 """
 
 import re
-import socket
-import time
-from flask import Flask, abort, request, jsonify, render_template, Response
+from flask import Flask, abort, request, jsonify, render_template
 import json
+from collections import deque
 from pathlib import Path
 import yaml
-import subprocess
-import plistlib
-from datetime import datetime, timedelta
 
-
+from app import runstate
 from app.teachers import load_teacher_cache, validate_rules_against_cache
 
 BASE_DIR = Path(__file__).parent
 NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
-
-SERVICE_LABELS = {
-    "com.berttaylor.class_booker.web": "Web Server",
-    "com.berttaylor.class_booker": "Class Scheduler",
-    "com.berttaylor.class_booker.teachers": "Teacher Sync",
-}
 
 
 class IndentDumper(yaml.SafeDumper):
@@ -46,204 +38,7 @@ def _extract_header_comments(content: str) -> str:
     return "\n".join(header) + "\n"
 
 
-def _get_next_run(label: str) -> str:
-    try:
-        plist_path = BASE_DIR / "runners" / f"{label}.plist"
-        if not plist_path.exists():
-            return ""
-
-        with open(plist_path, "rb") as f:
-            data = plistlib.load(f)
-
-        intervals = data.get("StartCalendarInterval")
-        if not intervals:
-            return ""
-
-        if isinstance(intervals, dict):
-            intervals = [intervals]
-
-        now = datetime.now()
-        next_runs = []
-
-        for interval in intervals:
-            # interval might have Minute, Hour, Day, Month, Weekday
-            minute = interval.get("Minute", 0)
-            hour = interval.get("Hour")
-
-            # Simple logic for Minute/Hour based schedules
-            if hour is None:
-                # Runs every hour at 'minute'
-                run_time = now.replace(minute=minute, second=0, microsecond=0)
-                if run_time <= now:
-                    run_time += timedelta(hours=1)
-                next_runs.append(run_time)
-            else:
-                # Runs every day at 'hour:minute'
-                run_time = now.replace(
-                    hour=hour, minute=minute, second=0, microsecond=0
-                )
-                if run_time <= now:
-                    run_time += timedelta(days=1)
-                next_runs.append(run_time)
-
-        if next_runs:
-            next_run = min(next_runs)
-            return f"next run at {next_run.strftime('%H:%M')}"
-
-        return ""
-    except Exception:
-        return ""
-
-
-def _get_service_status(label: str) -> dict:
-    friendly_name = SERVICE_LABELS.get(label, label)
-    try:
-        res = subprocess.run(
-            ["launchctl", "list", label], capture_output=True, text=True
-        )
-        if res.returncode != 0:
-            return {
-                "label": label,
-                "name": friendly_name,
-                "status": "Not loaded",
-                "pid": None,
-            }
-
-        # Check if it has a PID
-        for line in res.stdout.splitlines():
-            if '"PID"' in line:
-                try:
-                    # Line looks like: "PID" = 43909;
-                    pid_str = line.split("=")[1].strip().rstrip(";")
-                    return {
-                        "label": label,
-                        "name": friendly_name,
-                        "status": "Running",
-                        "pid": int(pid_str),
-                    }
-                except (IndexError, ValueError):
-                    pass
-
-        next_run_str = _get_next_run(label)
-        status = f"{next_run_str}" if next_run_str else "Loaded (Waiting)"
-        return {
-            "label": label,
-            "name": friendly_name,
-            "status": status,
-            "pid": None,
-        }
-    except Exception as e:
-        return {
-            "label": label,
-            "name": friendly_name,
-            "status": f"Error: {str(e)}",
-            "pid": None,
-        }
-
-
-def _check_internet_access() -> bool:
-    try:
-        # Check connectivity to Google's public DNS
-        socket.create_connection(("8.8.8.8", 53), timeout=2)
-        return True
-    except (OSError, socket.timeout):
-        return False
-
-
-def _get_network_connection() -> dict:
-    try:
-        # Find the active interface for the default route
-        res = subprocess.run(
-            ["/sbin/route", "-n", "get", "default"], capture_output=True, text=True
-        )
-        interface = ""
-        for line in res.stdout.splitlines():
-            if "interface:" in line:
-                interface = line.split(":")[1].strip()
-                break
-
-        if not interface:
-            return {"active": False, "type": "None", "name": "No connection"}
-
-        # Determine if it's Wi-Fi or Ethernet
-        hw_res = subprocess.run(
-            ["/usr/sbin/networksetup", "-listallhardwareports"],
-            capture_output=True,
-            text=True,
-        )
-        hw_type = "Ethernet"
-        current_port = ""
-        for line in hw_res.stdout.splitlines():
-            if "Hardware Port:" in line:
-                current_port = line.split(":")[1].strip()
-            elif f"Device: {interface}" in line:
-                hw_type = (
-                    "Wi-Fi"
-                    if "Wi-Fi" in current_port or "AirPort" in current_port
-                    else "Ethernet"
-                )
-                break
-
-        # Get name (SSID if Wi-Fi)
-        conn_name = interface
-        if hw_type == "Wi-Fi":
-            wifi_res = subprocess.run(
-                ["/usr/sbin/networksetup", "-getairportnetwork", interface],
-                capture_output=True,
-                text=True,
-            )
-            if "Current Wi-Fi Network:" in wifi_res.stdout:
-                conn_name = wifi_res.stdout.split(":")[1].strip()
-
-        return {
-            "active": True,
-            "type": hw_type,
-            "name": conn_name,
-            "interface": interface,
-        }
-    except Exception:
-        return {"active": False, "type": "Error", "name": "Check failed"}
-
-
 app = Flask(__name__)
-
-
-@app.route("/api/status/stream")
-def status_stream():
-    def event_stream():
-        last_full_check = 0
-        last_status = None
-
-        while True:
-            now = time.time()
-            # Service status (cheap)
-            services = [_get_service_status(label) for label in SERVICE_LABELS]
-
-            # System status (more expensive)
-            if now - last_full_check > 30:
-                system_status = {
-                    "internet": _check_internet_access(),
-                    "connection": _get_network_connection(),
-                }
-                last_full_check = now
-            elif last_status:
-                system_status = last_status["system"]
-            else:
-                system_status = {
-                    "internet": _check_internet_access(),
-                    "connection": _get_network_connection(),
-                }
-                last_full_check = now
-
-            current_status = {"services": services, "system": system_status}
-
-            if current_status != last_status:
-                yield f"data: {json.dumps(current_status)}\n\n"
-                last_status = current_status
-
-            time.sleep(1)
-
-    return Response(event_stream(), mimetype="text/event-stream")
 
 
 @app.route("/api/teachers")
@@ -261,26 +56,26 @@ def api_teachers():
 def index():
     schedules = sorted(p.stem for p in (BASE_DIR / "scheduling_rules").glob("*.yml"))
 
-    # We look for all .log and .json files in logs/
-    logs_files = list((BASE_DIR / "logs").glob("*.log")) + list(
-        (BASE_DIR / "logs").glob("*.json")
+    log_dir = BASE_DIR / "logs"
+    logs_files = (
+        list(log_dir.glob("*.log"))
+        + list(log_dir.glob("*.json"))
+        + list(log_dir.glob("*.jsonl"))
     )
-    logs = sorted(list(set(p.stem for p in logs_files)))
+    # runs.jsonl backs the panel above; it would be noise as a log link.
+    logs = sorted({p.stem for p in logs_files} - {"runs"})
 
-    # Service status
-    services = [_get_service_status(label) for label in SERVICE_LABELS]
-
-    system_status = {
-        "internet": _check_internet_access(),
-        "connection": _get_network_connection(),
-    }
-
+    last = runstate.last()
     return render_template(
         "index.html",
         schedules=schedules,
         logs=logs,
-        services=services,
-        system=system_status,
+        last=last,
+        runs=runstate.recent(50),
+        last_booking=runstate.last_booking(),
+        next_cron=runstate.next_cron_run().strftime("%H:%M"),
+        stale=runstate.is_stale(last),
+        stale_after=runstate.STALE_AFTER_MINUTES,
     )
 
 
@@ -373,15 +168,32 @@ def save(name: str):
 def view_log(name: str):
     _validate_name(name)
 
-    # Prefer .json file if it exists, otherwise use .log
+    TAIL = 1000
+    jsonl_path = BASE_DIR / "logs" / f"{name}.jsonl"
     json_path = BASE_DIR / "logs" / f"{name}.json"
     log_path = BASE_DIR / "logs" / f"{name}.log"
 
-    if json_path.exists():
-        content = json_path.read_text()
+    if jsonl_path.exists():
+        # deque streams the file and keeps only the tail, so the whole log never
+        # has to be parsed to render the last screenful.
+        with open(jsonl_path) as f:
+            lines = deque(f, maxlen=TAIL)
+        logs = []
+        for line in lines:
+            if not line.strip():
+                continue
+            try:
+                logs.append(json.loads(line))
+            except ValueError:
+                # One torn line shouldn't blank the whole view.
+                logs.append(
+                    {"timestamp": "-", "level": "WARNING", "message": line.strip()}
+                )
+    elif json_path.exists():
+        # Pre-JSONL archive, kept readable.
         try:
-            logs = json.loads(content)
-        except Exception:
+            logs = json.loads(json_path.read_text())
+        except ValueError:
             logs = [
                 {
                     "timestamp": "-",
@@ -390,15 +202,14 @@ def view_log(name: str):
                 }
             ]
     elif log_path.exists():
-        content = log_path.read_text()
         logs = [
             {"timestamp": "-", "level": "INFO", "message": line}
-            for line in content.splitlines()
+            for line in log_path.read_text().splitlines()
         ]
     else:
         abort(404)
 
-    return render_template("logs.html", name=name, logs=logs[-1000:])
+    return render_template("logs.html", name=name, logs=logs[-TAIL:])
 
 
 def _friendly_error(raw: str) -> str:
@@ -429,4 +240,7 @@ def _load_rules_from_dict(data: dict):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=8008)
+    # Local debugging only, bound to loopback. Production runs under gunicorn
+    # (see compose.yml): debug=True exposes the Werkzeug console, which is a
+    # remote shell for anyone who reaches it.
+    app.run(debug=True, host="127.0.0.1", port=8008)

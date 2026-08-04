@@ -1,5 +1,6 @@
 httpx
 flask
+gunicorn
 typer
 python-dotenv
 PyYAML

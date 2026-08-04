@@ -1,0 +1,23 @@
+# Local development. docker compose reads this automatically, and it is not
+# deployed to the VPS (gitignored there via deploy: it stays local-only).
+#
+#   docker compose up web          # UI at http://localhost:8008, no auth, no TLS
+#   docker compose run --rm cron python main.py run-due --force-soft
+#
+# Caddy is deliberately absent here: requesting a certificate for the real
+# domain from a laptop fails the ACME challenge and burns Let's Encrypt rate
+# limit. Auth and TLS are verified on the VPS, not locally.
+services:
+  web:
+    ports:
+      - "127.0.0.1:8008:8008"
+
+  # Opt-in only: `docker compose up` should not start booking real classes from
+  # a development machine. Use `docker compose run --rm cron ...` instead.
+  cron:
+    profiles:
+      - manual
+
+  caddy:
+    profiles:
+      - manual
