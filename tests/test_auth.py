@@ -117,7 +117,7 @@ class TestLogin(BaseTest):
 
         self.router.post("/auth/login").mock(
             return_value=httpx.Response(
-                200, json={"status": "success", "access_token": fresh_token}
+                200, json={"status": "success", "token": fresh_token}
             )
         )
 
@@ -155,7 +155,7 @@ class TestLogin(BaseTest):
 
         route = self.router.post("/auth/login").mock(
             return_value=httpx.Response(
-                200, json={"status": "success", "access_token": "new_token"}
+                200, json={"status": "success", "token": "new_token"}
             )
         )
 
@@ -171,7 +171,7 @@ class TestLogin(BaseTest):
 
         self.router.post("/auth/login").mock(
             return_value=httpx.Response(
-                200, json={"status": "success", "access_token": new_token}
+                200, json={"status": "success", "token": new_token}
             )
         )
 

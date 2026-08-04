@@ -87,7 +87,7 @@ def login(
     if response.status_code == 200:
         res_data = response.json()
         if res_data.get("status") == "success":
-            token = res_data.get("access_token")
+            token = res_data.get("token")
             if token:
                 _save_cached_token(token, cache_file)
             return token

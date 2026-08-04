@@ -26,6 +26,15 @@ python main.py <command>
 
 This is a Python CLI tool (Typer) that automates booking Spanish classes on worldsacross.com by calling the platform's backend API directly.
 
+**API:** `api-comunity.worldsacross.com/api` (the backend behind `preview.worldsacross.com`). The platform migrated here from the legacy `api.worldsacross.com` in August 2026 — see the `new-api` branch history for the old endpoints. Notable traits:
+
+- **Booking is two calls:** `POST /booking/favorites/hold-slot` then `POST /booking/favorites/confirm`. Success is HTTP 200; neither returns a `status` field. If the hold succeeds and the confirm fails, the slot stays locked until `expires_at` (~5 min), which blocks retries.
+- **Timezone travels in the `x-timezone` header**, not the request body.
+- **Calendar** (`GET /booking/favorites/calendar`) is keyed by date, covers ~9 days, 30-minute slots, and returns **favourite tutors only**. `get_bookings()` normalises `/students/me/my-classes` back to the flat `staff_id`/`date`/`start_time` shape the scheduler expects, converting UTC to the configured timezone.
+- **No server-time endpoint** — `get_server_time()` reads the HTTP `Date` header off `/students/me/quota` (1-second resolution).
+- **`/tutors` is paginated** (Laravel paginator, ~9 per page); `get_tutors_map()` walks every page.
+- **Confirm sends `focus_type` + `activity_suggestion_id`** from `/students/me/activities`. `get_focus()` picks the top activity once per run and degrades to omitting both if unavailable.
+
 **Module layout:**
 ```
 app/
@@ -65,11 +74,15 @@ web.py               — Flask schedule editor (browser UI with validation)
 - `populate-teachers` (03:00 daily) — fetches tutors from the booking API, merges into `data/teachers.json`.
 - `web-interface` (always online) — browser UI for editing rules and viewing logs.
 
-**`BookingRule` schema** (`app/rules.py`): each rule has `weekday` (single string, e.g. `"mon"`), `start_time` (HH:MM, on the hour or half-hour), `slots` (1 or 2), and `preferred_teachers` (non-empty list of teacher name strings). An optional `label` can be provided; if missing, the `id` property is computed as `f"{weekday}_{start_time}"`. `slot_times()` expands to `["13:00"]` or `["13:00", "13:30"]` depending on `slots`. Pydantic validators enforce all constraints at load time.
+**`BookingRule` schema** (`app/rules.py`): each rule has `weekday` (single string, e.g. `"mon"`), `start_time` (HH:MM, on the hour or half-hour), `slots` (1 or 2), and `preferred_teachers` (non-empty list of teacher name strings). An optional `label` can be provided; if missing, the `id` property is computed as `f"{weekday}_{start_time}"`. `slots` is a **duration multiplier, not a repeat count**: `duration_minutes` is `30 * slots`, so a 2-slot rule is one 60-minute booking rather than two consecutive 30-minute ones (the old API forced the split; this one takes `duration_minutes`). `slot_times()` therefore always returns a single start time. Pydantic validators enforce all constraints at load time.
 
 **Teacher cache** (`app/teachers.py`): `data/teachers.json` (gitignored, project root) maps teacher name → `{id, status}`. Names are never deleted — absent teachers are marked `REMOVED`. Updated by `populate-teachers`. `run-due` checks the cache on startup: exits with a message if missing, and raises a `ValueError` if any name in the rules is unknown.
 
-**Scheduler** (`services/scheduler.py` → `run_due_process`): two-phase design — Phase 1 uses the local clock only to check if any rule is due (no API calls); Phase 2 authenticates and syncs server time only when a booking is actually due. `_evaluate_rules` expands each rule into individual slot entries keyed by `slot_key` (e.g. `wed_13:00_slot1`), returning `(rule, slot_key)` tuples in `due_rules` and dicts keyed by `slot_key`. Uses a file lock (`.run_due.lock`) to prevent concurrent runs. A random delay of 15–30 seconds is applied before each booking attempt to simulate natural behaviour.
+**Scheduler** (`services/scheduler.py` → `run_due_process`): two-phase design — Phase 1 uses the local clock only to check if any rule is due (no API calls); Phase 2 authenticates and syncs server time only when a booking is actually due. `_evaluate_rules` produces one entry per rule occurrence, keyed by `slot_key` (the rule id, e.g. `wed_13:00`), returning `(rule, slot_key)` tuples in `due_rules` and dicts keyed by `slot_key`. Uses a file lock (`.run_due.lock`) to prevent concurrent runs.
+
+The booking window is `lesson - 7 days - 30 min`, computed in **UTC** and converted back to local time. Doing that arithmetic on the local wall clock shifts the window by an hour across a DST boundary — see `TestBookingWindowDST`.
+
+`_is_already_booked` compares **time ranges**, not start times: recurring classes booked on the website are 60 minutes long, so a rule starting partway through one would otherwise double-book. It checks every booking regardless of date, so a lesson crossing midnight is caught.
 
 **Schedule editor** (`web.py`): Flask app serving a CodeMirror YAML editor at `http://localhost:8008`. Validates against `SchedulingRules` schema, checks teacher names against `data/teachers.json`, and detects duplicate rule IDs before saving.
 
@@ -83,4 +96,4 @@ When adding HTTP-touching test classes, inherit `BaseTest` and use `self.mock_cl
 
 Scheduler tests patch `sched_module` (imported as `import app.services.scheduler as sched_module`) and must include `patch.object(sched_module, "is_token_expired", return_value=False)` to prevent the post-wait re-auth check from hitting the network.
 
-Test fixtures (`calendar_response`, `tutors_response`, `bookings_response`) are loaded from JSON files in `tests/fixtures/` and injected via `conftest.py`.
+Test fixtures (`calendar_response`, `tutors_page1_response`, `tutors_page2_response`, `my_classes_response`, `activities_response`) are loaded from JSON files in `tests/fixtures/` and injected via `conftest.py`. Most were captured from real API responses.

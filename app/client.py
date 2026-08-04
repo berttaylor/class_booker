@@ -2,15 +2,18 @@ import httpx
 
 
 class BookingClient:
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, timezone: str = "Europe/Madrid"):
         self.client = httpx.Client(
             base_url=base_url,
             timeout=30.0,
             headers={
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
-                "Referer": "https://app.worldsacross.com/",
-                "Accept": "application/json, text/plain, */*",
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+                "Origin": "https://preview.worldsacross.com",
+                "Referer": "https://preview.worldsacross.com/",
+                "Accept": "application/json",
+                "Accept-Language": "en",
                 "Content-Type": "application/json",
+                "x-timezone": timezone,
             },
         )
 

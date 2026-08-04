@@ -1,16 +1,290 @@
 {
-  "1": {
-    "184": [
-      {"start_time": "2026-04-08T11:00:00+00:00", "status": "available"},
-      {"start_time": "2026-04-08T11:30:00+00:00", "status": "booked"},
-      {"start_time": "2026-04-09T11:00:00+00:00", "status": "available"}
+  "data": {
+    "2026-08-01": [
+      {
+        "tutor_id": "4605",
+        "tutor": null,
+        "start_time": "2026-08-01T13:00:00.000Z",
+        "end_time": "2026-08-01T13:30:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4605",
+        "tutor": null,
+        "start_time": "2026-08-01T13:30:00.000Z",
+        "end_time": "2026-08-01T14:00:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4605",
+        "tutor": null,
+        "start_time": "2026-08-01T14:00:00.000Z",
+        "end_time": "2026-08-01T14:30:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4605",
+        "tutor": null,
+        "start_time": "2026-08-01T14:30:00.000Z",
+        "end_time": "2026-08-01T15:00:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4605",
+        "tutor": null,
+        "start_time": "2026-08-01T16:30:00.000Z",
+        "end_time": "2026-08-01T17:00:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4629",
+        "tutor": null,
+        "start_time": "2026-08-01T11:30:00.000Z",
+        "end_time": "2026-08-01T12:00:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      }
     ],
-    "159": [
-      {"start_time": "2026-04-08T11:00:00+00:00", "status": "available"},
-      {"start_time": "2026-04-08T16:00:00+00:00", "status": "available"}
+    "2026-08-02": [
+      {
+        "tutor_id": "4605",
+        "tutor": null,
+        "start_time": "2026-08-02T14:00:00.000Z",
+        "end_time": "2026-08-02T14:30:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4605",
+        "tutor": null,
+        "start_time": "2026-08-02T14:30:00.000Z",
+        "end_time": "2026-08-02T15:00:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4629",
+        "tutor": null,
+        "start_time": "2026-08-02T11:00:00.000Z",
+        "end_time": "2026-08-02T11:30:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4629",
+        "tutor": null,
+        "start_time": "2026-08-02T13:30:00.000Z",
+        "end_time": "2026-08-02T14:00:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4629",
+        "tutor": null,
+        "start_time": "2026-08-02T16:00:00.000Z",
+        "end_time": "2026-08-02T16:30:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4629",
+        "tutor": null,
+        "start_time": "2026-08-02T16:30:00.000Z",
+        "end_time": "2026-08-02T17:00:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      }
     ],
-    "12": [
-      {"start_time": "2026-04-08T11:30:00+00:00", "status": "available"}
+    "2026-08-03": [
+      {
+        "tutor_id": "4468",
+        "tutor": null,
+        "start_time": "2026-08-03T11:00:00.000Z",
+        "end_time": "2026-08-03T11:30:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4584",
+        "tutor": null,
+        "start_time": "2026-08-03T11:00:00.000Z",
+        "end_time": "2026-08-03T11:30:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4605",
+        "tutor": null,
+        "start_time": "2026-08-03T21:00:00.000Z",
+        "end_time": "2026-08-03T21:30:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4605",
+        "tutor": null,
+        "start_time": "2026-08-03T22:30:00.000Z",
+        "end_time": "2026-08-03T23:00:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4609",
+        "tutor": null,
+        "start_time": "2026-08-03T11:00:00.000Z",
+        "end_time": "2026-08-03T11:30:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4609",
+        "tutor": null,
+        "start_time": "2026-08-03T12:30:00.000Z",
+        "end_time": "2026-08-03T13:00:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4629",
+        "tutor": null,
+        "start_time": "2026-08-03T10:00:00.000Z",
+        "end_time": "2026-08-03T10:30:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4629",
+        "tutor": null,
+        "start_time": "2026-08-03T10:30:00.000Z",
+        "end_time": "2026-08-03T11:00:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4629",
+        "tutor": null,
+        "start_time": "2026-08-03T11:00:00.000Z",
+        "end_time": "2026-08-03T11:30:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4629",
+        "tutor": null,
+        "start_time": "2026-08-03T12:30:00.000Z",
+        "end_time": "2026-08-03T13:00:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4629",
+        "tutor": null,
+        "start_time": "2026-08-03T13:00:00.000Z",
+        "end_time": "2026-08-03T13:30:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4629",
+        "tutor": null,
+        "start_time": "2026-08-03T13:30:00.000Z",
+        "end_time": "2026-08-03T14:00:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4629",
+        "tutor": null,
+        "start_time": "2026-08-03T15:00:00.000Z",
+        "end_time": "2026-08-03T15:30:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4629",
+        "tutor": null,
+        "start_time": "2026-08-03T15:30:00.000Z",
+        "end_time": "2026-08-03T16:00:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4629",
+        "tutor": null,
+        "start_time": "2026-08-03T16:00:00.000Z",
+        "end_time": "2026-08-03T16:30:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      },
+      {
+        "tutor_id": "4629",
+        "tutor": null,
+        "start_time": "2026-08-03T18:30:00.000Z",
+        "end_time": "2026-08-03T19:00:00.000Z",
+        "duration_minutes": 30,
+        "status": "available",
+        "held_by_user_id": null,
+        "expires_at": null
+      }
     ]
   }
 }

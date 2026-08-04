@@ -1,0 +1,98 @@
+{
+  "data": [
+    {
+      "id": "405226",
+      "session_id": 330396,
+      "title": "Standard",
+      "tutor_id": 4609,
+      "tutor_name": "Mc Kaderin Quintero",
+      "tutor_avatar_url": "https://imagedelivery.net/HVWVjTdC35tlg7FwTUpm5A/user_id_4609/public",
+      "date_time": "2026-08-02T11:00:00+00:00",
+      "duration_minutes": 30,
+      "class_type": "one_on_one",
+      "origin": "regular_booking",
+      "status": "upcoming",
+      "tags": [
+        "favorite_tutor"
+      ],
+      "has_feedback": false,
+      "meeting_url": null,
+      "join_url": "https://api-comunity.worldsacross.com/join-class?booking_id=405226&expires=1785670800&role=student&signature=e9bce75a4b35a11fc1f954dfc082b8fd7e35d24967fa73f02e652e257d33da13",
+      "practice_preference": null,
+      "practice_preference_note": null,
+      "material_attached_urls": null
+    },
+    {
+      "id": "405235",
+      "session_id": 330399,
+      "title": "Standard",
+      "tutor_id": 4609,
+      "tutor_name": "Mc Kaderin Quintero",
+      "tutor_avatar_url": "https://imagedelivery.net/HVWVjTdC35tlg7FwTUpm5A/user_id_4609/public",
+      "date_time": "2026-08-02T11:30:00+00:00",
+      "duration_minutes": 30,
+      "class_type": "one_on_one",
+      "origin": "regular_booking",
+      "status": "upcoming",
+      "tags": [
+        "favorite_tutor"
+      ],
+      "has_feedback": false,
+      "meeting_url": null,
+      "join_url": "https://api-comunity.worldsacross.com/join-class?booking_id=405235&expires=1785672600&role=student&signature=5d46cc25488169294cbbbc6e952840c71c3f21ec7946b3c70478676ee43522d8",
+      "practice_preference": null,
+      "practice_preference_note": null,
+      "material_attached_urls": null
+    },
+    {
+      "id": "405768",
+      "session_id": 331017,
+      "title": "Standard",
+      "tutor_id": 4609,
+      "tutor_name": "Mc Kaderin Quintero",
+      "tutor_avatar_url": "https://imagedelivery.net/HVWVjTdC35tlg7FwTUpm5A/user_id_4609/public",
+      "date_time": "2026-08-03T17:00:00+00:00",
+      "duration_minutes": 30,
+      "class_type": "one_on_one",
+      "origin": "regular_booking",
+      "status": "upcoming",
+      "tags": [
+        "favorite_tutor"
+      ],
+      "has_feedback": false,
+      "meeting_url": null,
+      "join_url": "https://api-comunity.worldsacross.com/join-class?booking_id=405768&expires=1785778800&role=student&signature=8a383153114843a3ccb4fefa954daf1a39364490798b4fcadd3c0e93cac4e82d",
+      "practice_preference": null,
+      "practice_preference_note": null,
+      "material_attached_urls": null
+    },
+    {
+      "id": "405786",
+      "session_id": 331035,
+      "title": "Standard",
+      "tutor_id": 4609,
+      "tutor_name": "Mc Kaderin Quintero",
+      "tutor_avatar_url": "https://imagedelivery.net/HVWVjTdC35tlg7FwTUpm5A/user_id_4609/public",
+      "date_time": "2026-08-03T17:30:00+00:00",
+      "duration_minutes": 30,
+      "class_type": "one_on_one",
+      "origin": "regular_booking",
+      "status": "upcoming",
+      "tags": [
+        "favorite_tutor"
+      ],
+      "has_feedback": false,
+      "meeting_url": null,
+      "join_url": "https://api-comunity.worldsacross.com/join-class?booking_id=405786&expires=1785780600&role=student&signature=e09f15c2f2e837e7c3932bde85d908b57a33ffc8592a059d4a332e556b2cd59a",
+      "practice_preference": null,
+      "practice_preference_note": null,
+      "material_attached_urls": null
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "per_page": 50,
+    "total": 22,
+    "total_pages": 1
+  }
+}

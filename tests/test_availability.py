@@ -1,9 +1,71 @@
 import httpx
 
 from tests.base import BaseTest
-from app.api.availability import get_available_teachers, get_teacher_slots
+from app.api.availability import (
+    get_available_teachers,
+    get_teacher_slots,
+    get_tutors_map,
+)
 
 _AUTHED_TOKEN = "header.eyJleHAiOiA5OTk5OTk5OTk5fQ.sig"
+
+
+def _slot(tutor_id, start, status="available"):
+    """Builds a calendar slot in the API's shape."""
+    return {
+        "tutor_id": tutor_id,
+        "tutor": None,
+        "start_time": start,
+        "end_time": start,
+        "duration_minutes": 30,
+        "status": status,
+        "held_by_user_id": None,
+        "expires_at": None,
+    }
+
+
+class TestGetTutorsMap(BaseTest):
+    def setup_method(self, method):
+        super().setup_method(method)
+        self.mock_client.set_token(_AUTHED_TOKEN)
+
+    def test_follows_pagination_across_all_pages(
+        self, tutors_page1_response, tutors_page2_response
+    ):
+        """A one-page-only bug would silently truncate the roster."""
+        self.router.get("/tutors", params={"page": 1}).mock(
+            return_value=httpx.Response(200, json=tutors_page1_response)
+        )
+        self.router.get("/tutors", params={"page": 2}).mock(
+            return_value=httpx.Response(200, json=tutors_page2_response)
+        )
+
+        result = get_tutors_map(self.mock_client)
+
+        assert len(result) == 5
+        assert result["4651"]["name"] == "Adan Diaz"
+        assert result["4584"]["name"] == "Paula Barrientos"  # only on page 2
+
+    def test_single_page_does_not_request_more(self):
+        self.router.get("/tutors", params={"page": 1}).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "current_page": 1,
+                    "data": [{"id": 4609, "name": "Mc Quintero"}],
+                    "last_page": 1,
+                },
+            )
+        )
+
+        assert get_tutors_map(self.mock_client) == {"4609": {"name": "Mc Quintero"}}
+
+    def test_returns_empty_on_http_error(self):
+        self.router.get("/tutors", params={"page": 1}).mock(
+            return_value=httpx.Response(500, text="Server Error")
+        )
+
+        assert get_tutors_map(self.mock_client) == {}
 
 
 class TestGetAvailableTeachers(BaseTest):
@@ -11,183 +73,211 @@ class TestGetAvailableTeachers(BaseTest):
         super().setup_method(method)
         self.mock_client.set_token(_AUTHED_TOKEN)
 
-    def test_returns_available_teachers(self, calendar_response, tutors_response):
-        self.router.get("/auth/tutors").mock(
-            return_value=httpx.Response(200, json=tutors_response)
-        )
-        self.router.post("/auth/booking/calendar").mock(
-            return_value=httpx.Response(200, json=calendar_response)
+    def _mock_calendar(self, by_date):
+        self.router.get("/booking/favorites/calendar").mock(
+            return_value=httpx.Response(200, json={"data": by_date})
         )
 
-        # 11:00 UTC on April 8 = 13:00 CEST
-        result = get_available_teachers(self.mock_client, "2026-04-08T11:00:00+00:00")
-        ids = [t["id"] for t in result]
-        assert "184" in ids
-        assert "159" in ids
-
-    def test_filters_booked_slots(self):
-        self.router.get("/auth/tutors").mock(
+    def _mock_tutors(self, tutors):
+        self.router.get("/tutors", params={"page": 1}).mock(
             return_value=httpx.Response(
-                200, json={"tutors": [{"id": 184, "name": "Maria"}]}
+                200, json={"current_page": 1, "data": tutors, "last_page": 1}
             )
         )
-        self.router.post("/auth/booking/calendar").mock(
+
+    def test_returns_available_teachers(self, calendar_response, tutors_page1_response):
+        self.router.get("/booking/favorites/calendar").mock(
+            return_value=httpx.Response(200, json=calendar_response)
+        )
+        self.router.get("/tutors", params={"page": 1}).mock(
             return_value=httpx.Response(
                 200,
-                json={
-                    "1": {
-                        "184": [
-                            {
-                                "start_time": "2026-04-08T11:00:00+00:00",
-                                "status": "booked",
-                            }
-                        ]
-                    }
-                },
+                json={**tutors_page1_response, "last_page": 1},
             )
         )
 
-        result = get_available_teachers(self.mock_client, "2026-04-08T11:00:00+00:00")
-        assert result == []
+        # 2026-08-03 11:00Z — two tutors free in the fixture
+        result = get_available_teachers(self.mock_client, "2026-08-03T11:00:00+00:00")
+        ids = [t["id"] for t in result]
+        assert "4468" in ids
+        assert "4584" in ids
 
-    def test_enriches_with_teacher_names(self, calendar_response, tutors_response):
-        self.router.get("/auth/tutors").mock(
-            return_value=httpx.Response(200, json=tutors_response)
-        )
-        self.router.post("/auth/booking/calendar").mock(
-            return_value=httpx.Response(200, json=calendar_response)
+    def test_filters_non_available_status(self):
+        self._mock_tutors([{"id": 4584, "name": "Paula"}])
+        self._mock_calendar(
+            {"2026-08-03": [_slot("4584", "2026-08-03T11:00:00.000Z", "held")]}
         )
 
-        result = get_available_teachers(self.mock_client, "2026-04-08T11:00:00+00:00")
-        teacher_184 = next(t for t in result if t["id"] == "184")
-        assert teacher_184["name"] == "Maria Garcia"
+        assert (
+            get_available_teachers(self.mock_client, "2026-08-03T11:00:00+00:00") == []
+        )
+
+    def test_enriches_with_teacher_names(self):
+        self._mock_tutors([{"id": 4584, "name": "Paula Barrientos"}])
+        self._mock_calendar({"2026-08-03": [_slot("4584", "2026-08-03T11:00:00.000Z")]})
+
+        result = get_available_teachers(self.mock_client, "2026-08-03T11:00:00+00:00")
+        assert result[0]["name"] == "Paula Barrientos"
 
     def test_unknown_teacher_defaults_to_id(self):
-        self.router.get("/auth/tutors").mock(
-            return_value=httpx.Response(200, json={"tutors": []})
-        )
-        self.router.post("/auth/booking/calendar").mock(
-            return_value=httpx.Response(
-                200,
-                json={
-                    "1": {
-                        "999": [
-                            {
-                                "start_time": "2026-04-08T11:00:00+00:00",
-                                "status": "available",
-                            }
-                        ]
-                    }
-                },
-            )
-        )
+        self._mock_tutors([])
+        self._mock_calendar({"2026-08-03": [_slot("999", "2026-08-03T11:00:00.000Z")]})
 
-        result = get_available_teachers(self.mock_client, "2026-04-08T11:00:00+00:00")
+        result = get_available_teachers(self.mock_client, "2026-08-03T11:00:00+00:00")
         assert len(result) == 1
         assert result[0]["name"] == "Teacher 999"
 
-    def test_api_failure_returns_empty(self):
-        self.router.get("/auth/tutors").mock(
-            return_value=httpx.Response(200, json={"tutors": []})
-        )
-        self.router.post("/auth/booking/calendar").mock(
+    def test_calendar_failure_returns_empty(self):
+        self.router.get("/booking/favorites/calendar").mock(
             return_value=httpx.Response(500, text="Server Error")
         )
 
-        result = get_available_teachers(self.mock_client, "2026-04-08T11:00:00+00:00")
-        assert result == []
-
-    def test_handles_list_response_format(self):
-        """API might return a list of services instead of a dict."""
-        self.router.get("/auth/tutors").mock(
-            return_value=httpx.Response(
-                200, json={"tutors": [{"id": 184, "name": "Maria"}]}
-            )
-        )
-        self.router.post("/auth/booking/calendar").mock(
-            return_value=httpx.Response(
-                200,
-                json=[
-                    {
-                        "1": {
-                            "184": [
-                                {
-                                    "start_time": "2026-04-08T11:00:00+00:00",
-                                    "status": "available",
-                                }
-                            ]
-                        }
-                    }
-                ],
-            )
+        assert (
+            get_available_teachers(self.mock_client, "2026-08-03T11:00:00+00:00") == []
         )
 
-        result = get_available_teachers(self.mock_client, "2026-04-08T11:00:00+00:00")
+    def test_deduplicates_repeated_tutor_at_same_time(self):
+        """Same tutor twice at one start time yields a single candidate."""
+        self._mock_tutors([{"id": 4584, "name": "Paula"}])
+        self._mock_calendar(
+            {
+                "2026-08-03": [
+                    _slot("4584", "2026-08-03T11:00:00.000Z"),
+                    _slot("4584", "2026-08-03T11:00:00.000Z"),
+                ]
+            }
+        )
+
+        result = get_available_teachers(self.mock_client, "2026-08-03T11:00:00+00:00")
         assert len(result) == 1
-        assert result[0]["id"] == "184"
+
+    def test_matches_across_date_keys(self):
+        """Slots are matched on start_time, not on which date key they sit under."""
+        self._mock_tutors([{"id": 4584, "name": "Paula"}])
+        self._mock_calendar(
+            {
+                "2026-08-01": [_slot("4584", "2026-08-01T11:00:00.000Z")],
+                "2026-08-03": [_slot("4584", "2026-08-03T11:00:00.000Z")],
+            }
+        )
+
+        result = get_available_teachers(self.mock_client, "2026-08-03T11:00:00+00:00")
+        assert len(result) == 1
+        assert result[0]["start_time_local"] == "13:00"
 
     def test_local_time_in_result_cest(self):
-        self.router.get("/auth/tutors").mock(
-            return_value=httpx.Response(
-                200, json={"tutors": [{"id": 184, "name": "Maria"}]}
-            )
-        )
-        # 11:00 UTC in April = 13:00 CEST (UTC+2)
-        self.router.post("/auth/booking/calendar").mock(
-            return_value=httpx.Response(
-                200,
-                json={
-                    "1": {
-                        "184": [
-                            {
-                                "start_time": "2026-04-08T11:00:00+00:00",
-                                "status": "available",
-                            }
-                        ]
-                    }
-                },
-            )
-        )
+        # 11:00 UTC in August = 13:00 CEST (UTC+2)
+        self._mock_tutors([{"id": 4584, "name": "Paula"}])
+        self._mock_calendar({"2026-08-03": [_slot("4584", "2026-08-03T11:00:00.000Z")]})
 
-        result = get_available_teachers(self.mock_client, "2026-04-08T11:00:00+00:00")
+        result = get_available_teachers(self.mock_client, "2026-08-03T11:00:00+00:00")
         assert result[0]["start_time_local"] == "13:00"
 
     def test_local_time_in_result_cet(self):
-        self.router.get("/auth/tutors").mock(
-            return_value=httpx.Response(
-                200, json={"tutors": [{"id": 184, "name": "Maria"}]}
-            )
-        )
         # 12:00 UTC in January = 13:00 CET (UTC+1)
-        self.router.post("/auth/booking/calendar").mock(
-            return_value=httpx.Response(
-                200,
-                json={
-                    "1": {
-                        "184": [
-                            {
-                                "start_time": "2026-01-08T12:00:00+00:00",
-                                "status": "available",
-                            }
-                        ]
-                    }
-                },
-            )
-        )
+        self._mock_tutors([{"id": 4584, "name": "Paula"}])
+        self._mock_calendar({"2026-01-08": [_slot("4584", "2026-01-08T12:00:00.000Z")]})
 
         result = get_available_teachers(self.mock_client, "2026-01-08T12:00:00+00:00")
         assert result[0]["start_time_local"] == "13:00"
 
-    def test_no_match_at_different_time(self, calendar_response, tutors_response):
-        self.router.get("/auth/tutors").mock(
-            return_value=httpx.Response(200, json=tutors_response)
-        )
-        self.router.post("/auth/booking/calendar").mock(
-            return_value=httpx.Response(200, json=calendar_response)
+    def test_accepts_local_time_input(self):
+        """Caller passes Madrid local time; matching happens in UTC."""
+        self._mock_tutors([{"id": 4584, "name": "Paula"}])
+        self._mock_calendar({"2026-08-03": [_slot("4584", "2026-08-03T11:00:00.000Z")]})
+
+        result = get_available_teachers(self.mock_client, "2026-08-03T13:00:00+02:00")
+        assert len(result) == 1
+
+    def test_60min_requires_both_consecutive_slots(self):
+        """A teacher free only for the first half-hour cannot take a 60-min class."""
+        self._mock_tutors([{"id": 4584, "name": "Paula"}])
+        self._mock_calendar({"2026-08-08": [_slot("4584", "2026-08-08T11:00:00.000Z")]})
+
+        assert (
+            get_available_teachers(
+                self.mock_client, "2026-08-08T11:00:00+00:00", duration_minutes=60
+            )
+            == []
         )
 
-        result = get_available_teachers(self.mock_client, "2026-04-08T14:00:00+00:00")
-        assert result == []
+    def test_60min_accepts_teacher_with_both_slots(self):
+        self._mock_tutors([{"id": 4584, "name": "Paula"}])
+        self._mock_calendar(
+            {
+                "2026-08-08": [
+                    _slot("4584", "2026-08-08T11:00:00.000Z"),
+                    _slot("4584", "2026-08-08T11:30:00.000Z"),
+                ]
+            }
+        )
+
+        result = get_available_teachers(
+            self.mock_client, "2026-08-08T11:00:00+00:00", duration_minutes=60
+        )
+        assert [t["id"] for t in result] == ["4584"]
+
+    def test_60min_rejects_when_second_half_is_held(self):
+        self._mock_tutors([{"id": 4584, "name": "Paula"}])
+        self._mock_calendar(
+            {
+                "2026-08-08": [
+                    _slot("4584", "2026-08-08T11:00:00.000Z"),
+                    _slot("4584", "2026-08-08T11:30:00.000Z", "held"),
+                ]
+            }
+        )
+
+        assert (
+            get_available_teachers(
+                self.mock_client, "2026-08-08T11:00:00+00:00", duration_minutes=60
+            )
+            == []
+        )
+
+    def test_60min_picks_only_teachers_with_full_hour(self):
+        """Two teachers free at the start; only one has the following half-hour."""
+        self._mock_tutors(
+            [{"id": 4584, "name": "Paula"}, {"id": 4629, "name": "Sergio"}]
+        )
+        self._mock_calendar(
+            {
+                "2026-08-08": [
+                    _slot("4584", "2026-08-08T11:00:00.000Z"),
+                    _slot("4629", "2026-08-08T11:00:00.000Z"),
+                    _slot("4629", "2026-08-08T11:30:00.000Z"),
+                ]
+            }
+        )
+
+        result = get_available_teachers(
+            self.mock_client, "2026-08-08T11:00:00+00:00", duration_minutes=60
+        )
+        assert [t["id"] for t in result] == ["4629"]
+
+    def test_30min_unaffected_by_missing_second_slot(self):
+        self._mock_tutors([{"id": 4584, "name": "Paula"}])
+        self._mock_calendar({"2026-08-08": [_slot("4584", "2026-08-08T11:00:00.000Z")]})
+
+        result = get_available_teachers(
+            self.mock_client, "2026-08-08T11:00:00+00:00", duration_minutes=30
+        )
+        assert len(result) == 1
+
+    def test_no_match_at_different_time(self, calendar_response, tutors_page1_response):
+        self.router.get("/booking/favorites/calendar").mock(
+            return_value=httpx.Response(200, json=calendar_response)
+        )
+        self.router.get("/tutors", params={"page": 1}).mock(
+            return_value=httpx.Response(
+                200,
+                json={**tutors_page1_response, "last_page": 1},
+            )
+        )
+
+        assert (
+            get_available_teachers(self.mock_client, "2026-08-03T04:00:00+00:00") == []
+        )
 
 
 class TestGetTeacherSlots(BaseTest):
@@ -196,31 +286,32 @@ class TestGetTeacherSlots(BaseTest):
         self.mock_client.set_token(_AUTHED_TOKEN)
 
     def test_fetches_slots_for_teacher_string_id(self, calendar_response):
-        self.router.post("/auth/booking/calendar").mock(
+        self.router.get("/booking/favorites/calendar").mock(
             return_value=httpx.Response(200, json=calendar_response)
         )
 
-        slots = get_teacher_slots(self.mock_client, "184")
-        assert len(slots) == 3
-        assert slots[0]["start_time"] == "2026-04-08T11:00:00+00:00"
+        slots = get_teacher_slots(self.mock_client, "4605")
+        assert len(slots) > 0
+        assert all(s["tutor_id"] == "4605" for s in slots)
 
     def test_fetches_slots_for_teacher_int_id(self, calendar_response):
-        self.router.post("/auth/booking/calendar").mock(
+        self.router.get("/booking/favorites/calendar").mock(
             return_value=httpx.Response(200, json=calendar_response)
         )
 
-        slots = get_teacher_slots(self.mock_client, 184)
-        assert len(slots) == 3
+        assert len(get_teacher_slots(self.mock_client, 4605)) == len(
+            get_teacher_slots(self.mock_client, "4605")
+        )
 
     def test_returns_empty_on_http_error(self):
-        self.router.post("/auth/booking/calendar").mock(
+        self.router.get("/booking/favorites/calendar").mock(
             return_value=httpx.Response(500)
         )
 
-        assert get_teacher_slots(self.mock_client, "184") == []
+        assert get_teacher_slots(self.mock_client, "4605") == []
 
     def test_returns_empty_for_unknown_teacher(self, calendar_response):
-        self.router.post("/auth/booking/calendar").mock(
+        self.router.get("/booking/favorites/calendar").mock(
             return_value=httpx.Response(200, json=calendar_response)
         )
 

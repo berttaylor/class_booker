@@ -10,7 +10,7 @@ from pathlib import Path
 from app.api.auth import login, is_token_expired
 from app.notifications import send_push
 from app.api.availability import get_available_teachers
-from app.api.booking import get_bookings, book_lesson
+from app.api.booking import get_bookings, book_lesson, get_focus
 from app.client import BookingClient
 from app.config import app_config
 from app.rules import (
@@ -27,10 +27,6 @@ from app import logger
 CACHE_DIR = Path(__file__).parent.parent.parent / "cache"
 
 LOCK_FILE = ".run_due.lock"
-
-BOOKING_DELAY_MIN_SECONDS = 15
-BOOKING_DELAY_MAX_SECONDS = 30
-
 
 # ---------------------------------------------------------------------------
 # Lock management
@@ -120,25 +116,30 @@ def _evaluate_rules(rules_data, now_local):
             if weekday_str != rule.weekday:
                 continue
 
-            for slot_index, slot_time_str in enumerate(rule.slot_times()):
+            for slot_time_str in rule.slot_times():
                 lesson_time = dt.strptime(slot_time_str, "%H:%M").time()
                 lesson_dt = local_tz.localize(dt.combine(target_date, lesson_time))
 
-                booking_open_dt = lesson_dt - timedelta(
-                    days=BOOKING_OPEN_OFFSET_DAYS,
-                    minutes=BOOKING_OPEN_OFFSET_MINUTES,
-                )
-                booking_open_dt = local_tz.localize(
-                    booking_open_dt.replace(tzinfo=None)
-                )
+                # Offset in absolute time: subtract in UTC, then convert back.
+                # Doing the arithmetic on the local wall clock and re-localising
+                # shifts the window by an hour across a DST boundary — an hour
+                # early in October (booking rejected), an hour late in March
+                # (race already lost).
+                booking_open_dt = (
+                    lesson_dt.astimezone(pytz.utc)
+                    - timedelta(
+                        days=BOOKING_OPEN_OFFSET_DAYS,
+                        minutes=BOOKING_OPEN_OFFSET_MINUTES,
+                    )
+                ).astimezone(local_tz)
 
                 if booking_open_dt < now_local - timedelta(minutes=5):
                     continue
 
                 found_occurrence = True
-                slot_key = (
-                    f"{rule.id}_slot{slot_index + 1}" if rule.slots > 1 else rule.id
-                )
+                # One booking per rule occurrence — a 2-slot rule is a single
+                # 60-minute lesson, so there is no slot index to disambiguate.
+                slot_key = rule.id
                 all_upcoming_rules.append((booking_open_dt, rule, lesson_dt))
 
                 diff = (booking_open_dt - now_local).total_seconds()
@@ -175,47 +176,46 @@ def _apply_force_flag(
         rule_open_times[slot_key] = next_open_dt
 
 
-def _print_verbose_upcoming(all_upcoming_rules, now_local, rules_data):
-    """Prints the UPCOMING RULE INFO block when --verbose is active."""
-    all_upcoming_rules.sort(key=lambda x: x[0])
-    next_open_dt, next_rule, next_lesson_dt = all_upcoming_rules[0]
-    time_until = next_open_dt - now_local
+def _is_already_booked(
+    approved_bookings, date_str, start_time_str, duration_minutes=30
+) -> bool:
+    """
+    Returns True if an existing booking overlaps the requested time range.
 
-    hours, remainder = divmod(int(time_until.total_seconds()), 3600)
-    minutes, seconds = divmod(remainder, 60)
-    time_str = (
-        f"{hours}h {minutes}m {seconds}s" if hours > 0 else f"{minutes}m {seconds}s"
-    )
+    Compares ranges rather than exact start times: recurring classes booked via
+    the website are 60 minutes long, so a rule starting halfway through one
+    would not match on start time alone and would double-book.
+    """
+    target_start = dt.strptime(f"{date_str} {start_time_str}", "%Y-%m-%d %H:%M:%S")
+    target_end = target_start + timedelta(minutes=duration_minutes)
 
-    print("--- UPCOMING RULE INFO ---")
-    print(f"Next rule: {next_rule.id}")
-    print(
-        f"Lesson time: {next_lesson_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})"
-    )
-    print(
-        f"Booking opens at: {next_open_dt.strftime('%Y-%m-%d %H:%M')} ({rules_data.timezone})"
-    )
-    print(f"Time until booking opens: {time_str}")
-    print("--------------------------")
+    for b in approved_bookings:
+        try:
+            other_start = dt.strptime(
+                f"{b['date']} {b['start_time']}", "%Y-%m-%d %H:%M:%S"
+            )
+        except (KeyError, ValueError, TypeError):
+            continue
+        # `or 30` rather than a get() default: the API can send an explicit null.
+        other_end = other_start + timedelta(minutes=b.get("duration_minutes") or 30)
+        if target_start < other_end and other_start < target_end:
+            return True
 
-
-def _is_already_booked(approved_bookings, date_str, start_time_str) -> bool:
-    """Returns True if an approved booking already exists for the given date and time."""
-    return any(
-        b.get("date") == date_str and b.get("start_time") == start_time_str
-        for b in approved_bookings
-    )
+    return False
 
 
 def _get_candidates(
-    rule, available_teachers, approved_bookings, target_date_str, target_dt
+    rule,
+    available_teachers,
+    approved_bookings,
+    target_date_str,
+    duration_minutes=30,
 ):
     """
     Builds a priority-sorted candidate list for one rule:
       1. Intersect rule.teacher_ids with available teachers
       2. Filter out teachers who have reached the 60-min daily limit
-      3. Promote the teacher from the adjacent preceding slot to the front
-    Returns candidates where the list is prioritized by preferred order then adjacency.
+    Returns candidates in the rule's preferred order.
     """
     available_teacher_ids = [str(t["id"]) for t in available_teachers]
 
@@ -240,44 +240,20 @@ def _get_candidates(
     if not candidates:
         return []
 
-    # Daily 60-min limit filter
+    # Daily 60-min limit filter. Counts each booking's real length — a single
+    # 60-minute class already exhausts the day's allowance for that teacher.
     final_candidates = []
     for cand in candidates:
         tid = str(cand["id"])
         booked_minutes = sum(
-            30
+            b.get("duration_minutes", 30)
             for b in approved_bookings
             if str(b.get("staff_id")) == tid and b.get("date") == target_date_str
         )
-        if booked_minutes < 60:
+        if booked_minutes + duration_minutes <= 60:
             final_candidates.append(cand)
         else:
             logger.info(f"Removed: {cand['name']} ({tid}) — 60m limit")
-
-    if not final_candidates:
-        return []
-
-    # Adjacency priority — promote teacher who taught the preceding 30-min slot
-    prev_slot_start = (target_dt - timedelta(minutes=30)).strftime("%H:%M:00")
-    prev_teacher = next(
-        (
-            str(b.get("staff_id"))
-            for b in approved_bookings
-            if b.get("date") == target_date_str
-            and b.get("start_time") == prev_slot_start
-        ),
-        None,
-    )
-    if prev_teacher:
-        prev_cand = next(
-            (c for c in final_candidates if str(c["id"]) == prev_teacher), None
-        )
-        if prev_cand:
-            final_candidates.remove(prev_cand)
-            final_candidates.insert(0, prev_cand)
-            logger.info(
-                f"Prioritised: {prev_cand['name']} ({prev_teacher}) (adjacent slot)"
-            )
 
     return final_candidates
 
@@ -337,12 +313,15 @@ def _attempt_booking(
     credentials: dict,
     cache_file: Path,
     slot_key="",
+    focus: tuple = (None, None),
+    duration_minutes: int = 30,
 ) -> bool:
     """
     Iterates candidates and attempts to book the lesson.
     Returns True on first success. Mutates approved_bookings on success.
     """
     max_retries = 3
+    focus_type, activity_suggestion_id = focus
 
     for cand in candidates:
         tid = str(cand["id"])
@@ -356,16 +335,29 @@ def _attempt_booking(
         logger.info(f"{prefix}Attempting: {tname} ({tid})")
 
         for attempt in range(max_retries):
-            res = book_lesson(client, tid, target_slot_iso)
+            res = book_lesson(
+                client,
+                tid,
+                target_slot_iso,
+                focus_type,
+                activity_suggestion_id,
+                duration_minutes,
+            )
 
-            # Auth error — refresh token and retry once
-            if res.get("status") == "error" and (
-                "Unauthorized" in str(res.get("message"))
-                or "401" in str(res.get("message"))
-            ):
+            # Auth error — refresh token and retry once. Keyed on the real
+            # status code: a bare "401" substring also matches booking ids and
+            # session numbers, triggering a pointless re-auth mid-race.
+            if res.get("status_code") in (401, 403):
                 logger.info(f"{prefix}Re-auth: token rejected, refreshing...")
                 _refresh_schedule_token(client, credentials, cache_file)
-                res = book_lesson(client, tid, target_slot_iso)
+                res = book_lesson(
+                    client,
+                    tid,
+                    target_slot_iso,
+                    focus_type,
+                    activity_suggestion_id,
+                    duration_minutes,
+                )
 
             if res.get("status") == "success":
                 logger.info(f"{prefix}BOOKED: {tname} ({tid})")
@@ -375,6 +367,7 @@ def _attempt_booking(
                         "date": target_date_str,
                         "start_time": target_start_time_str,
                         "status": "approved",
+                        "duration_minutes": duration_minutes,
                     }
                 )
                 return True
@@ -382,13 +375,12 @@ def _attempt_booking(
             error_msg = str(res.get("message", "unknown error"))
             logger.error(f"{prefix}Failed: {tname} ({tid}): {error_msg}")
 
-            # If it's the specific Spanish error that happens when we're too early,
-            # wait a tiny bit and retry. Otherwise, it's a "real" error, so move
-            # to the next candidate.
-            if (
-                "excede el límite" in error_msg.lower()
-                or "excede el agendamiento límite" in error_msg.lower()
-            ):
+            # The API returns INSUFFICIENT_AVAILABILITY both when a slot is
+            # genuinely taken and when we arrive a fraction before it opens, so
+            # retry briefly rather than moving straight to the next candidate.
+            # (The old API signalled this with a Spanish "excede el límite"
+            # message, which this backend never sends.)
+            if "INSUFFICIENT_AVAILABILITY" in error_msg.upper():
                 logger.info(f"{prefix}Retry {attempt + 1}/{max_retries}...")
                 time.sleep(0.5)
                 continue
@@ -507,25 +499,35 @@ def _run_schedule(
             b for b in bookings if b.get("status") == "approved" and not b.get("past")
         ]
 
+        # Fetched once per run, not per attempt — keeps the booking race clean.
+        focus = get_focus(client)
+
         for rule, slot_key in due_rules:
             target_slot_iso = rule_lesson_times[slot_key]
             booking_open_dt = rule_open_times[slot_key]
             target_dt = dt.fromisoformat(target_slot_iso)
             target_date_str = target_dt.strftime("%Y-%m-%d")
             target_start_time_str = target_dt.strftime("%H:%M:00")
+            duration = rule.duration_minutes
 
             if _is_already_booked(
-                approved_bookings, target_date_str, target_start_time_str
+                approved_bookings, target_date_str, target_start_time_str, duration
             ):
                 logger.info(
                     f"[{slot_key}] Already booked — skipping", schedule=schedule_name
                 )
                 continue
 
-            available_teachers = get_available_teachers(client, target_slot_iso)
+            available_teachers = get_available_teachers(
+                client, target_slot_iso, duration
+            )
 
             candidates = _get_candidates(
-                rule, available_teachers, approved_bookings, target_date_str, target_dt
+                rule,
+                available_teachers,
+                approved_bookings,
+                target_date_str,
+                duration,
             )
             if not candidates:
                 logger.info(
@@ -575,6 +577,8 @@ def _run_schedule(
                 credentials=credentials,
                 cache_file=cache_file,
                 slot_key=slot_key,
+                focus=focus,
+                duration_minutes=duration,
             )
             if not success:
                 logger.error(

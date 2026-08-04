@@ -115,9 +115,7 @@ def server_time():
 
             typer.echo(f"Server Response: {result}")
 
-            server_time_str = (
-                result.get("time") or result.get("datetime") or result.get("now")
-            )
+            server_time_str = result.get("datetime")
             if server_time_str:
                 try:
                     server_dt = dt.fromisoformat(server_time_str.replace("Z", "+00:00"))
