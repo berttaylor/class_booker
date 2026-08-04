@@ -2,14 +2,19 @@
 # renews certificates automatically, and enforces Basic Auth before any request
 # reaches Flask — the app itself has no authentication.
 #
-# Generate the password hash with:
+# The password hash comes from BASIC_AUTH_HASH in .env, so it stays out of git.
+# Generate one with:
 #   docker run --rm caddy:2 caddy hash-password --plaintext 'your-password'
 # Use a long generated password from your password manager, and NOT the same one
 # as the booking site: this file guards those credentials.
+#
+# compose.yml validates that BASIC_AUTH_HASH is non-empty before Caddy starts.
+# An empty value here would make basic_auth match nothing and serve the site
+# unauthenticated, so that check is load-bearing — do not remove it.
 
 classes.bertbert.work {
 	basic_auth {
-		bert REPLACE_WITH_BCRYPT_HASH
+		bert {$BASIC_AUTH_HASH}
 	}
 
 	reverse_proxy web:8008

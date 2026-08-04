@@ -46,11 +46,15 @@ docker compose run --rm cron python main.py run-due --force-soft
 2.  Harden SSH: keys only (`PasswordAuthentication no`), root login disabled, and enable `unattended-upgrades`.
 3.  Point DNS at it: an `A` record for `classes.bertbert.work`. On Cloudflare set it to **DNS-only (grey cloud)** — the orange-cloud proxy terminates TLS itself and breaks Caddy's ACME challenge.
 4.  Install Docker, then `git clone` this repo to `/srv/class_booker`.
-5.  Generate a Basic Auth hash and paste it into `Caddyfile`:
+5.  Generate a Basic Auth hash and put it in `.env` as `BASIC_AUTH_HASH`:
     ```bash
     docker run --rm caddy:2 caddy hash-password --plaintext 'a-long-generated-password'
     ```
     Use a password manager. **Not** the same password as the booking site — this is what guards those credentials.
+
+    **Double every `$` in the hash** when writing it to `.env`: compose reads a single `$` as variable interpolation and silently truncates the hash, which breaks authentication. `$2a$14$abc...` becomes `$$2a$$14$$abc...`.
+
+    Compose refuses to start Caddy if `BASIC_AUTH_HASH` is missing or empty — an empty hash matches nothing and would publish the schedules unauthenticated.
 6.  Copy the secrets and schedules across (they're gitignored, so they aren't in the clone):
     ```bash
     scp .env booker:/srv/class_booker/
