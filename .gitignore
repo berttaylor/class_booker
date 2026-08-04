@@ -168,3 +168,9 @@ scheduling_rules/*
 cache/*
 runners/*
 
+
+# Local compose overlay. Ignored so it can never reach a server, where compose
+# might load it and start the stack without Caddy in front. Copy the .example
+# to create it: cp compose.dev.yml.example compose.dev.yml
+compose.dev.yml
+compose.override.yml

@@ -34,11 +34,18 @@ Runs as three Docker Compose services. Both locally and on the VPS, the whole sc
 ### Local
 
 ```bash
-docker compose up web       # http://localhost:8008 — no auth, no TLS
-docker compose run --rm cron python main.py run-due --force-soft
+make up        # http://localhost:8080 — same Basic Auth as production
+make dry-run   # exercise the scheduler without booking anything
+make down
 ```
 
-`compose.override.yml` keeps `cron` and `caddy` behind a `manual` profile so a development machine doesn't book real classes or request certificates.
+Local goes through Caddy with the same password as production. **There is no way to reach the web service without authenticating**, in either mode: the `web` service publishes no host port, so Caddy is the only entrance. The app has no auth of its own, so a second unauthenticated door would only stay shut as long as every future deploy remembered to exclude it.
+
+The only difference from production is plain HTTP on `127.0.0.1:8080` instead of HTTPS on the real domain — a laptop can't answer the ACME challenge for `classes.bertbert.work`.
+
+`cron` sits behind a `manual` profile locally so `make up` doesn't book real classes from a development machine.
+
+`compose.dev.yml` is **gitignored**, because compose loads `compose.override.yml` automatically by name and a stray overlay on a server could start the stack with no Caddy in front of it. `make` creates it from `compose.dev.yml.example` on first use.
 
 ### VPS (one-time)
 
