@@ -90,7 +90,9 @@ deploy.sh            — ssh booker 'git pull && docker compose up -d --build'
 - **cron** — `supercronic /app/crontab`. Same image and volumes as web. `:29`/`:59` → `run-due`, `03:00` → `populate-teachers`.
 - **caddy** — ports 80/443, automatic Let's Encrypt, Basic Auth. Certs live in a named volume; losing it means re-requesting and risking the rate limit.
 
-Volumes (all gitignored, so they must exist on the host): `scheduling_rules/`, `data/`, `logs/`, `cache/`, plus `.env`.
+Bind mounts (all gitignored, so they must exist on the host): `scheduling_rules/`, `data/`, `logs/`, `cache/`.
+
+`.env` is **not** mounted — `env_file:` injects its contents as environment variables, so the file itself never enters the container and `chmod 600` on the host stays meaningful. `BASIC_AUTH_HASH` is the exception: compose interpolates it into Caddy's environment, which is why its `$` characters must be doubled in `.env`.
 
 `TZ=Europe/Madrid` is set in the Dockerfile. Booking arithmetic is UTC-internal, but the **cron trigger times are local** — without TZ the `:29`/`:59` windows fire in the wrong hour.
 
