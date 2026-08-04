@@ -1,7 +1,11 @@
-# Local development. docker compose reads this file automatically.
+# Local development. NOT auto-loaded — compose only reads compose.override.yml
+# by name, and this is deliberately named differently so a server can never
+# pick it up from a git pull. Opt in explicitly:
 #
-#   docker compose up            # http://localhost:8080 — same Basic Auth as production
-#   docker compose run --rm cron python main.py run-due --force-soft
+#   docker compose -f compose.yml -f compose.dev.yml up -d
+#
+#   docker compose -f compose.yml -f compose.dev.yml run --rm cron \
+#       python main.py run-due --force-soft
 #
 # There is deliberately NO way to reach the web service without authenticating.
 # The app has no auth of its own, so a port that bypasses Caddy would be a
