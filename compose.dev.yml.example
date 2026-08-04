@@ -26,9 +26,10 @@ services:
       # avoids clashing with anything already on port 80.
       - "127.0.0.1:8080:80"
     environment:
-      # Same hash as production, from .env. Caddy still refuses to start
+      # Same hashes as production, from .env. Caddy still refuses to start
       # without it (see the :? guard in compose.yml).
-      - BASIC_AUTH_HASH=${BASIC_AUTH_HASH:?BASIC_AUTH_HASH must be set in .env}
+      - BASIC_AUTH_HASH_ADMIN=${BASIC_AUTH_HASH_ADMIN:?BASIC_AUTH_HASH_ADMIN must be set in .env}
+      - BASIC_AUTH_HASH_LEIGH=${BASIC_AUTH_HASH_LEIGH:?BASIC_AUTH_HASH_LEIGH must be set in .env}
     volumes:
       # Serve on :80 instead of the real domain, so no certificate is requested.
       - ./Caddyfile.local:/etc/caddy/Caddyfile:ro

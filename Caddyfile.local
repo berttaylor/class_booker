@@ -3,10 +3,11 @@
 # cannot answer the ACME challenge for that domain.
 #
 # Basic Auth is deliberately kept: local should fail the same way production
-# fails. BASIC_AUTH_HASH comes from .env, the same value the VPS uses.
+# fails. Hashes come from .env, the same values the VPS uses.
 :80 {
 	basic_auth {
-		bert {$BASIC_AUTH_HASH}
+		admin {$BASIC_AUTH_HASH_ADMIN}
+		leigh {$BASIC_AUTH_HASH_LEIGH}
 	}
 
 	reverse_proxy web:8008

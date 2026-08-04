@@ -33,10 +33,12 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      # No default: compose fails fast if BASIC_AUTH_HASH is missing from .env.
-      # An empty hash makes basic_auth match nothing, which would publish the
-      # schedules — including plaintext booking passwords — to the internet.
-      - BASIC_AUTH_HASH=${BASIC_AUTH_HASH:?BASIC_AUTH_HASH must be set in .env — refusing to start Caddy without a password hash}
+      # No defaults: compose fails fast if either hash is missing from .env. An
+      # empty hash makes that basic_auth entry match nothing, which would
+      # publish the schedules — including plaintext booking passwords — to the
+      # internet.
+      - BASIC_AUTH_HASH_ADMIN=${BASIC_AUTH_HASH_ADMIN:?BASIC_AUTH_HASH_ADMIN must be set in .env — refusing to start Caddy without a password hash}
+      - BASIC_AUTH_HASH_LEIGH=${BASIC_AUTH_HASH_LEIGH:?BASIC_AUTH_HASH_LEIGH must be set in .env — refusing to start Caddy without a password hash}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Named volume, not bind: losing it means re-requesting certificates and

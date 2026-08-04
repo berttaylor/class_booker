@@ -4,7 +4,16 @@
 DEV := docker compose -f compose.yml -f compose.dev.yml
 PROD := docker compose -f compose.yml
 
-.PHONY: up down logs dry-run test prod-up prod-down prod-logs compose.dev.yml
+.PHONY: up down logs dry-run test prod-up prod-down prod-logs compose.dev.yml hash
+
+# Generate a Caddy password hash already escaped for .env. Compose reads a
+# single "$" as interpolation and would silently truncate the hash, so every
+# "$" is doubled here — getting this wrong shows up only as a failed login.
+hash:
+	@printf 'Password (not echoed): ' >&2
+	@stty -echo; read -r p; stty echo; printf '\n' >&2; \
+	  docker run --rm caddy:2 caddy hash-password --plaintext "$$p" \
+	    | sed 's/\$$/$$$$/g'
 
 # compose.dev.yml is gitignored (it must never reach a server, where compose
 # could load it and run the stack without Caddy). Create it from the template.
