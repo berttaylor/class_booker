@@ -1,23 +1,38 @@
-# Local development. docker compose reads this automatically, and it is not
-# deployed to the VPS (gitignored there via deploy: it stays local-only).
+# Local development. docker compose reads this file automatically.
 #
-#   docker compose up web          # UI at http://localhost:8008, no auth, no TLS
+#   docker compose up            # http://localhost:8080 — same Basic Auth as production
 #   docker compose run --rm cron python main.py run-due --force-soft
 #
-# Caddy is deliberately absent here: requesting a certificate for the real
-# domain from a laptop fails the ACME challenge and burns Let's Encrypt rate
-# limit. Auth and TLS are verified on the VPS, not locally.
+# There is deliberately NO way to reach the web service without authenticating.
+# The app has no auth of its own, so a port that bypasses Caddy would be a
+# second, unauthenticated door — and one that only stays shut as long as every
+# future deploy remembers to exclude this file. One door, everywhere.
+#
+# The only difference from production: plain HTTP on 8080 instead of HTTPS on
+# classes.bertbert.work, because a laptop cannot answer the ACME challenge for
+# that domain. Basic Auth and the reverse proxy are otherwise identical.
 services:
-  web:
-    ports:
-      - "127.0.0.1:8008:8008"
-
-  # Opt-in only: `docker compose up` should not start booking real classes from
-  # a development machine. Use `docker compose run --rm cron ...` instead.
-  cron:
-    profiles:
-      - manual
-
   caddy:
+    # !reset discards the 80/443 mappings from compose.yml rather than adding to
+    # them. Without it, compose merges the lists and the laptop would publish
+    # this on 0.0.0.0 — i.e. to the whole LAN — which is what this migration
+    # exists to stop.
+    ports: !override
+      # Localhost-only, so the laptop does not serve this to the LAN. 8080
+      # avoids clashing with anything already on port 80.
+      - "127.0.0.1:8080:80"
+    environment:
+      # Same hash as production, from .env. Caddy still refuses to start
+      # without it (see the :? guard in compose.yml).
+      - BASIC_AUTH_HASH=${BASIC_AUTH_HASH:?BASIC_AUTH_HASH must be set in .env}
+    volumes:
+      # Serve on :80 instead of the real domain, so no certificate is requested.
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # Opt-in only: `docker compose up` must not start booking real classes from a
+  # development machine. Use `docker compose run --rm cron ...` instead.
+  cron:
     profiles:
       - manual

@@ -1,0 +1,15 @@
+# Local development only. Identical to Caddyfile except it listens on :80
+# instead of classes.bertbert.work, so no certificate is requested — a laptop
+# cannot answer the ACME challenge for that domain.
+#
+# Basic Auth is deliberately kept: local should fail the same way production
+# fails. BASIC_AUTH_HASH comes from .env, the same value the VPS uses.
+:80 {
+	basic_auth {
+		bert {$BASIC_AUTH_HASH}
+	}
+
+	reverse_proxy web:8008
+
+	encode gzip
+}
