@@ -2,8 +2,8 @@
 Schedule editor and status web UI.
 
 Served by gunicorn in the container; see compose.yml. Runs behind Caddy, which
-terminates TLS and enforces Basic Auth — this app has no auth of its own and
-must never be exposed directly.
+terminates TLS — Caddy no longer does auth, this app does (see app/webauth.py).
+Caddy is still the only thing that should reach it directly.
 """
 
 import re
@@ -15,6 +15,7 @@ import yaml
 
 from app import runstate
 from app.teachers import load_teacher_cache, validate_rules_against_cache
+from app.webauth import init_auth
 
 BASE_DIR = Path(__file__).parent
 NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -39,6 +40,7 @@ def _extract_header_comments(content: str) -> str:
 
 
 app = Flask(__name__)
+init_auth(app)
 
 
 @app.route("/api/teachers")

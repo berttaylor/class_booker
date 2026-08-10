@@ -26,10 +26,17 @@
     table.runs tr:last-child td { border-bottom: none; }
     a { display: inline-block; padding: 8px 16px; background: #16213e; border: 1px solid #0f3460; border-radius: 6px; color: #eee; text-decoration: none; font-size: 14px; }
     a:hover { background: #0f3460; }
+    .top-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 32px; }
+    .top-row h1 { margin-bottom: 0; }
+    button.logout { background: none; border: none; color: #666; font-size: 13px; cursor: pointer; padding: 4px 0; }
+    button.logout:hover { color: #eee; }
   </style>
 </head>
 <body>
-  <h1>Class Scheduler</h1>
+  <div class="top-row">
+    <h1>Class Scheduler</h1>
+    <form action="/logout" method="post"><button class="logout" type="submit">Log out</button></form>
+  </div>
   <section>
     <h2>Schedules</h2>
     <ul>

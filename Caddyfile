@@ -1,26 +1,8 @@
-# Caddy is the only thing exposed to the internet. It terminates TLS, gets and
-# renews certificates automatically, and enforces Basic Auth before any request
-# reaches Flask — the app itself has no authentication.
-#
-# Password hashes come from .env so they stay out of git. Generate each with:
-#   docker run --rm caddy:2 caddy hash-password --plaintext 'the-password'
-# Use long generated passwords from a password manager, and NOT the same ones as
-# the booking site: this wall is what guards those credentials.
-#
-# Both users have identical access — Basic Auth is a single wall, not per-user
-# authorisation, so anyone who logs in can read every schedule. Separate
-# accounts exist so one can be rotated or revoked without touching the other,
-# and so the access log records which login was used.
-#
-# compose.yml validates both hashes are non-empty before Caddy starts. An empty
-# value would make that entry match nothing, so those checks are load-bearing.
+# Caddy is the only thing exposed to the internet. It terminates TLS and gets
+# and renews certificates automatically. Auth is enforced by Flask itself
+# (see web.py) via a login page — Caddy just proxies.
 
 classes.bertbert.work {
-	basic_auth {
-		admin {$BASIC_AUTH_HASH_ADMIN}
-		leigh {$BASIC_AUTH_HASH_LEIGH}
-	}
-
 	reverse_proxy web:8008
 
 	encode gzip

@@ -46,7 +46,11 @@ jobs:
       - name: Build image
         run: docker compose -f compose.yml build web
 
+      # web.py refuses to import without the login secrets (app/webauth.py),
+      # and the stubbed .env has them blank — so pass throwaway values here.
+      # Keep them non-empty: a blank one should keep failing loudly.
       - name: Smoke-test the container
         run: |
-          docker compose -f compose.yml run --rm --no-deps web \
+          docker compose -f compose.yml run --rm --no-deps \
+            -e SECRET_KEY=ci -e AUTH_HASH_ADMIN=ci -e AUTH_HASH_LEIGH=ci web \
             python -c "import web, app.runstate; print('imports OK')"

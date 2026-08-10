@@ -1,11 +1,15 @@
 # Three services from one image: the web UI, the scheduler, and the TLS/auth
-# front door. Local development uses compose.override.yml, which docker compose
-# picks up automatically.
+# front door. Local development adds compose.dev.yml on top — opt-in via `make
+# up`, never auto-loaded (see compose.dev.yml.example).
 services:
   web:
     build: .
     restart: unless-stopped
-    # No ports: — only caddy may reach this. The app has no auth of its own.
+    # No ports: — only caddy may reach this, for TLS. Flask enforces its own
+    # login (see app/webauth.py) using SECRET_KEY/AUTH_HASH_ADMIN/AUTH_HASH_LEIGH
+    # from .env, injected via env_file below (every "$" doubled — see
+    # .env.example for why). app/webauth.py itself fails fast if any of the
+    # three is missing, so no `:?` guard is needed here.
     expose:
       - "8008"
     env_file: .env
@@ -32,13 +36,6 @@ services:
     ports:
       - "80:80"
       - "443:443"
-    environment:
-      # No defaults: compose fails fast if either hash is missing from .env. An
-      # empty hash makes that basic_auth entry match nothing, which would
-      # publish the schedules — including plaintext booking passwords — to the
-      # internet.
-      - BASIC_AUTH_HASH_ADMIN=${BASIC_AUTH_HASH_ADMIN:?BASIC_AUTH_HASH_ADMIN must be set in .env — refusing to start Caddy without a password hash}
-      - BASIC_AUTH_HASH_LEIGH=${BASIC_AUTH_HASH_LEIGH:?BASIC_AUTH_HASH_LEIGH must be set in .env — refusing to start Caddy without a password hash}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Named volume, not bind: losing it means re-requesting certificates and

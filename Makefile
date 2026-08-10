@@ -6,25 +6,28 @@ PROD := docker compose -f compose.yml
 
 .PHONY: up down logs dry-run test prod-up prod-down prod-logs compose.dev.yml hash
 
-# Generate a Caddy password hash already escaped for .env. Compose reads a
-# single "$" as interpolation and would silently truncate the hash, so every
-# "$" is doubled here — getting this wrong shows up only as a failed login.
+# Generate a login password hash for AUTH_HASH_ADMIN / AUTH_HASH_LEIGH in
+# .env, already escaped for it (see .env.example for why escaping is needed).
+# Runs through the project's own image so it uses the same Werkzeug that
+# web.py checks against.
 hash:
 	@printf 'Password (not echoed): ' >&2
 	@stty -echo; read -r p; stty echo; printf '\n' >&2; \
-	  docker run --rm caddy:2 caddy hash-password --plaintext "$$p" \
+	  $(PROD) run --rm -e HASH_PW="$$p" web python -c \
+	    "import os; from werkzeug.security import generate_password_hash; print(generate_password_hash(os.environ['HASH_PW']))" \
 	    | sed 's/\$$/$$$$/g'
 
 # compose.dev.yml is gitignored (it must never reach a server, where compose
-# could load it and run the stack without Caddy). Create it from the template.
+# could load it and publish a port or park the scheduler). Create it from the
+# template.
 compose.dev.yml:
 	@test -f $@ || { cp $@.example $@ && echo "created $@ from template"; }
 
 # --- local -------------------------------------------------------------------
 
-up: compose.dev.yml  ## Start web + caddy locally on http://localhost:8080 (Basic Auth on)
+up: compose.dev.yml  ## Start the web UI on http://127.0.0.1:8008 (login required)
 	$(DEV) up -d --build
-	@echo "http://localhost:8080 — user: bert"
+	@echo "http://127.0.0.1:8008 — log in as admin or leigh"
 
 down: compose.dev.yml
 	$(DEV) --profile manual down

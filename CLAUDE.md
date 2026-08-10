@@ -21,9 +21,10 @@ pytest --cov=app
 # Run the CLI
 python main.py <command>
 
-# Local Docker stack — UI only, no auth, no TLS, no real bookings
-docker compose up web            # http://localhost:8008
-docker compose run --rm cron python main.py run-due --force-soft
+# Local Docker stack — web only, no TLS, no real bookings (login still required)
+make up                          # http://127.0.0.1:8008
+make dry-run                     # run-due --force-soft in the cron container
+make down
 
 # Deploy (needs an ssh alias "booker")
 ./deploy.sh
@@ -66,8 +67,8 @@ app/
 web.py               — Flask schedule editor + status panel
 Dockerfile           — one image for both the web and cron services
 compose.yml          — web (gunicorn) + cron (supercronic) + caddy (TLS/auth)
-compose.override.yml — local dev: exposes 8008, parks cron/caddy behind a profile
-Caddyfile            — HTTPS + Basic Auth for classes.bertbert.work
+compose.dev.yml      — local dev overlay (gitignored; copied from .example by make)
+Caddyfile            — HTTPS reverse proxy for classes.bertbert.work
 crontab              — read by supercronic; :29/:59 run-due, 03:00 teacher sync
 deploy.sh            — ssh booker 'git pull && docker compose up -d --build'
 ```
@@ -86,17 +87,17 @@ deploy.sh            — ssh booker 'git pull && docker compose up -d --build'
   - Edit directly or via `python web.py`
 
 **Deployment** (Docker Compose on a VPS at `classes.bertbert.work`; `setup.sh` and `runners/*.plist` are the superseded macOS launchd path):
-- **web** — gunicorn, 2 workers. Not port-published; only Caddy reaches it. The app has **no authentication of its own** and must never be exposed directly.
+- **web** — gunicorn, 2 workers. Not port-published; only Caddy reaches it, for TLS and defense in depth. The app enforces its **own login** (session cookie, see web.py) and must never be exposed directly regardless.
 - **cron** — `supercronic /app/crontab`. Same image and volumes as web. `:29`/`:59` → `run-due`, `03:00` → `populate-teachers`.
-- **caddy** — ports 80/443, automatic Let's Encrypt, Basic Auth. Certs live in a named volume; losing it means re-requesting and risking the rate limit.
+- **caddy** — ports 80/443, automatic Let's Encrypt, reverse proxy only (no auth — that's Flask's job now). Certs live in a named volume; losing it means re-requesting and risking the rate limit.
 
 Bind mounts (all gitignored, so they must exist on the host): `scheduling_rules/`, `data/`, `logs/`, `cache/`.
 
-`.env` is **not** mounted — `env_file:` injects its contents as environment variables, so the file itself never enters the container and `chmod 600` on the host stays meaningful. `BASIC_AUTH_HASH` is the exception: compose interpolates it into Caddy's environment, which is why its `$` characters must be doubled in `.env`.
+`.env` is **not** mounted — `env_file:` injects its contents as environment variables, so the file itself never enters the container and `chmod 600` on the host stays meaningful. `AUTH_HASH_ADMIN`/`AUTH_HASH_LEIGH` need every `$` doubled in `.env` (see `.env.example`); `make hash` handles it.
 
 `TZ=Europe/Madrid` is set in the Dockerfile. Booking arithmetic is UTC-internal, but the **cron trigger times are local** — without TZ the `:29`/`:59` windows fire in the wrong hour.
 
-Local development: `docker compose up web` → `http://localhost:8008`, no auth, no TLS. `compose.override.yml` keeps cron and caddy behind a `manual` profile so a laptop doesn't book real classes; `deploy.sh` passes `-f compose.yml` explicitly so production ignores the override.
+Local development: `make up` → `http://127.0.0.1:8008`, the same login page as production (no dev bypass — one auth code path everywhere). The overlay is `compose.dev.yml`, gitignored and **never auto-loaded** (compose only auto-loads the name `compose.override.yml`), so `make` passes it with `-f`; `make` also creates it from `compose.dev.yml.example` on first use. It does two things: publishes `web` on `127.0.0.1:8008`, and parks **caddy and cron** behind a `manual` profile. Publishing that port is only safe because auth lives in Flask — the port leads to the login page, not past it. Caddy is skipped locally because with auth out of it, all it adds is TLS a laptop cannot get for the real domain. `deploy.sh` passes `-f compose.yml` explicitly regardless.
 
 **Monitoring** is layered, because each layer misses what the others catch:
 - Pushover (`app/notifications.py`) — booking/auth failures and crashes, pushed immediately.

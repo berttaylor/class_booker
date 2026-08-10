@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     pushover_user_key: str | None = None
     pushover_api_token: str | None = None
 
+    # Web login (see app/webauth.py). Optional here — required-ness is
+    # enforced there instead, at import time, so a CLI-only user without
+    # these set doesn't get blocked by Settings() itself.
+    secret_key: str | None = None
+    auth_hash_admin: str | None = None
+    auth_hash_leigh: str | None = None
+
     model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", extra="ignore")
 
 

@@ -4,9 +4,9 @@
 # Deploys stay on the SSH key deliberately: a git-pull trigger inside the web UI
 # would be a remote code execution path guarded only by a password.
 #
-# -f compose.yml is explicit so the tracked compose.override.yml (which exposes
-# ports, disables Caddy, and parks the scheduler behind a profile) is NOT picked
-# up in production.
+# -f compose.yml is explicit so no local overlay (compose.dev.yml, which
+# publishes a port and parks Caddy and the scheduler behind a profile) can be
+# picked up in production.
 set -euo pipefail
 
 HOST="${BOOKER_HOST:-booker}"

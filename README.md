@@ -29,23 +29,21 @@ Runs as three Docker Compose services. Both locally and on the VPS, the whole sc
 |---|---|
 | `web` | gunicorn serving the editor and status panel. Not port-published; only Caddy reaches it. |
 | `cron` | supercronic running `crontab`: `run-due` at :29/:59, `populate-teachers` at 03:00. |
-| `caddy` | HTTPS (automatic Let's Encrypt) and Basic Auth on ports 80/443. |
+| `caddy` | HTTPS (automatic Let's Encrypt) reverse proxy on ports 80/443. |
 
 ### Local
 
 ```bash
-make up        # http://localhost:8080 — same Basic Auth as production
+make up        # http://127.0.0.1:8008 — same login page as production
 make dry-run   # exercise the scheduler without booking anything
 make down
 ```
 
-Local goes through Caddy with the same password as production. **There is no way to reach the web service without authenticating**, in either mode: the `web` service publishes no host port, so Caddy is the only entrance. The app has no auth of its own, so a second unauthenticated door would only stay shut as long as every future deploy remembered to exclude it.
+Locally only `web` runs, published on loopback and reached directly. **There is no way to reach it without authenticating**: Flask enforces the login itself (`app/webauth.py`), so the published port leads to the same login page production serves rather than past it. The differences from production are plain HTTP and no Caddy — with auth out of Caddy, all it adds locally is TLS a laptop can't get for `classes.bertbert.work` anyway.
 
-The only difference from production is plain HTTP on `127.0.0.1:8080` instead of HTTPS on the real domain — a laptop can't answer the ACME challenge for `classes.bertbert.work`.
+`caddy` and `cron` both sit behind a `manual` profile locally: Caddy would grab ports 80/443 and chase a certificate it can't have, and `cron` would book real classes from a development machine.
 
-`cron` sits behind a `manual` profile locally so `make up` doesn't book real classes from a development machine.
-
-`compose.dev.yml` is **gitignored**, because compose loads `compose.override.yml` automatically by name and a stray overlay on a server could start the stack with no Caddy in front of it. `make` creates it from `compose.dev.yml.example` on first use.
+`compose.dev.yml` is **gitignored**, because compose loads `compose.override.yml` automatically by name and a stray overlay on a server could publish a port or park the scheduler. `make` creates it from `compose.dev.yml.example` on first use.
 
 ### VPS (one-time)
 
@@ -53,15 +51,14 @@ The only difference from production is plain HTTP on `127.0.0.1:8080` instead of
 2.  Harden SSH: keys only (`PasswordAuthentication no`), root login disabled, and enable `unattended-upgrades`.
 3.  Point DNS at it: an `A` record for `classes.bertbert.work`. On Cloudflare set it to **DNS-only (grey cloud)** — the orange-cloud proxy terminates TLS itself and breaks Caddy's ACME challenge.
 4.  Install Docker, then `git clone` this repo to `/srv/class_booker`.
-5.  Generate a Basic Auth hash and put it in `.env` as `BASIC_AUTH_HASH`:
+5.  Generate login password hashes and put them in `.env` as `AUTH_HASH_ADMIN`/`AUTH_HASH_LEIGH`, plus a `SECRET_KEY` to sign the session cookie:
     ```bash
-    docker run --rm caddy:2 caddy hash-password --plaintext 'a-long-generated-password'
+    make hash
+    python -c "import secrets; print(secrets.token_hex(32))"   # SECRET_KEY
     ```
     Use a password manager. **Not** the same password as the booking site — this is what guards those credentials.
 
-    **Double every `$` in the hash** when writing it to `.env`: compose reads a single `$` as variable interpolation and silently truncates the hash, which breaks authentication. `$2a$14$abc...` becomes `$$2a$$14$$abc...`.
-
-    Compose refuses to start Caddy if `BASIC_AUTH_HASH` is missing or empty — an empty hash matches nothing and would publish the schedules unauthenticated.
+    `web.py` refuses to start if `SECRET_KEY`, `AUTH_HASH_ADMIN`, or `AUTH_HASH_LEIGH` is missing — the app enforces its own login, and a missing hash should crash loudly rather than serve unauthenticated.
 6.  Copy the secrets and schedules across (they're gitignored, so they aren't in the clone):
     ```bash
     scp .env booker:/srv/class_booker/
@@ -186,8 +183,8 @@ python main.py server-time
 
 Edit and validate the schedule in a browser:
 ```bash
-docker compose up web
-# then open http://localhost:8008
+make up
+# then open http://127.0.0.1:8008 and log in
 ```
 
 The index page also shows the run history: last run and outcome, when the next
