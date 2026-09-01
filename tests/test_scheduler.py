@@ -201,10 +201,10 @@ def run_due_with_mocks(
 
 class TestBookingWindowDST:
     """
-    The window is a fixed absolute offset (7 days + 30 min) before the lesson.
-    Computing it on the local wall clock and re-localising shifts it by an hour
-    across a DST boundary — an hour early in October (the API rejects the
-    booking) or an hour late in March (the race is already lost).
+    The window is local midnight on the day 7 days before the lesson, so the
+    absolute gap to the lesson legitimately shifts by an hour across a DST
+    boundary. The old code subtracted a fixed offset in UTC to avoid exactly
+    that shift; midnight is a wall-clock concept, so the reasoning inverts.
     """
 
     @staticmethod
@@ -219,8 +219,8 @@ class TestBookingWindowDST:
             if lesson_dt.date() == lesson_date
         )
 
-    def test_window_is_exact_offset_across_october_transition(self):
-        """Lesson 25 Oct (CET) — window falls 18 Oct, still CEST."""
+    def test_window_is_local_midnight_across_october_transition(self):
+        """Lesson 25 Oct (CET) — window is midnight 18 Oct, still CEST."""
         tz = pytz.timezone("Europe/Madrid")
         lesson_date = date(2026, 10, 25)
         now_local = tz.localize(datetime(2026, 10, 17, 9, 0))
@@ -228,12 +228,14 @@ class TestBookingWindowDST:
         open_dt = self._window_for(lesson_date, "13:00", now_local)
         lesson_dt = tz.localize(datetime(2026, 10, 25, 13, 0))
 
+        assert open_dt.strftime("%Y-%m-%d %H:%M:%S") == "2026-10-18 00:00:02"
+        # Midnight to 13:00 is 13h, plus the hour the clocks go back in
+        # between, minus the midnight buffer.
         elapsed = lesson_dt.astimezone(pytz.utc) - open_dt.astimezone(pytz.utc)
-        assert elapsed == timedelta(days=7, minutes=30)
-        assert open_dt.strftime("%Y-%m-%d %H:%M") == "2026-10-18 13:30"
+        assert elapsed == timedelta(days=7, hours=14, seconds=-2)
 
-    def test_window_is_exact_offset_across_march_transition(self):
-        """Lesson 29 Mar (CEST) — window falls 22 Mar, still CET."""
+    def test_window_is_local_midnight_across_march_transition(self):
+        """Lesson 29 Mar (CEST) — window is midnight 22 Mar, still CET."""
         tz = pytz.timezone("Europe/Madrid")
         lesson_date = date(2026, 3, 29)
         now_local = tz.localize(datetime(2026, 3, 21, 9, 0))
@@ -241,9 +243,10 @@ class TestBookingWindowDST:
         open_dt = self._window_for(lesson_date, "13:00", now_local)
         lesson_dt = tz.localize(datetime(2026, 3, 29, 13, 0))
 
+        assert open_dt.strftime("%Y-%m-%d %H:%M:%S") == "2026-03-22 00:00:02"
+        # Same 13h, minus the hour the clocks go forward in between.
         elapsed = lesson_dt.astimezone(pytz.utc) - open_dt.astimezone(pytz.utc)
-        assert elapsed == timedelta(days=7, minutes=30)
-        assert open_dt.strftime("%Y-%m-%d %H:%M") == "2026-03-22 11:30"
+        assert elapsed == timedelta(days=7, hours=12, seconds=-2)
 
     def test_window_unaffected_outside_dst_transitions(self):
         tz = pytz.timezone("Europe/Madrid")
@@ -251,7 +254,8 @@ class TestBookingWindowDST:
         now_local = tz.localize(datetime(2026, 8, 7, 9, 0))
 
         open_dt = self._window_for(lesson_date, "13:00", now_local)
-        assert open_dt.strftime("%Y-%m-%d %H:%M") == "2026-08-08 12:30"
+        assert open_dt.strftime("%Y-%m-%d %H:%M:%S") == "2026-08-08 00:00:02"
+        assert open_dt.utcoffset() == timedelta(hours=2)
 
 
 class TestRuleEvaluation:
@@ -259,14 +263,10 @@ class TestRuleEvaluation:
         """
         If booking_open_dt is within precheck_lead_seconds (120s), rule is due.
 
-        We freeze time to 60 seconds BEFORE the booking window opens.
-        booking_open_dt = lesson_dt - 7d 30m
-        We want "now" to be 60s before that.
-
         Lesson: Wednesday 2026-04-15 13:00 Madrid
-        booking_open_dt = 2026-04-08 12:30 Madrid = 2026-04-08 10:30 UTC
+        booking_open_dt = midnight 2026-04-08 Madrid = 2026-04-07 22:00:02 UTC
 
-        Freeze at 10:29:00 UTC (60s before 10:30:00)
+        Freeze at 21:59:00 UTC — 62s before the window, i.e. the 23:59 cron run.
         """
         rules = make_rules(
             weekday="wed",
@@ -276,7 +276,7 @@ class TestRuleEvaluation:
         available = [make_available("184", "Maria Garcia")]
 
         book_fn = run_due_with_mocks(
-            frozen_time="2026-04-08T10:29:00+00:00",
+            frozen_time="2026-04-07T21:59:00+00:00",
             rules=rules,
             available_teachers=available,
         )
@@ -284,10 +284,10 @@ class TestRuleEvaluation:
 
     def test_rule_not_due_outside_precheck_window(self, capsys):
         """
-        If booking opens in 300s (> 120s lead), the rule is NOT due.
+        If booking opens in ~300s (> 120s lead), the rule is NOT due.
 
-        booking_open_dt = 2026-04-08 10:30:00 UTC
-        Freeze at 09:55:00 UTC (5 minutes before = 300s)
+        booking_open_dt = 2026-04-07 22:00:02 UTC
+        Freeze at 21:55:00 UTC (302s before)
         """
         rules = make_rules(
             weekday="wed",
@@ -297,63 +297,20 @@ class TestRuleEvaluation:
         available = [make_available("184", "Maria Garcia")]
 
         book_fn = run_due_with_mocks(
-            frozen_time="2026-04-08T09:55:00+00:00",
+            frozen_time="2026-04-07T21:55:00+00:00",
             rules=rules,
             available_teachers=available,
         )
         assert not book_fn.called
-
-    def test_booking_open_dt_formula(self):
-        """
-        booking_open_dt = lesson_dt - 7 days - 30 minutes.
-
-        Lesson: Wednesday 2026-04-15 13:00 Madrid (UTC+2 = 11:00 UTC)
-        Expected booking_open = 2026-04-08 10:30 UTC
-        """
-        import pytz
-        from datetime import datetime as dt
-
-        local_tz = pytz.timezone("Europe/Madrid")
-        lesson_dt = local_tz.localize(dt(2026, 4, 15, 13, 0, 0))
-        booking_open = lesson_dt - timedelta(days=7, minutes=30)
-
-        expected_utc = datetime(2026, 4, 8, 10, 30, 0, tzinfo=timezone.utc)
-        actual_utc = booking_open.astimezone(timezone.utc).replace(tzinfo=timezone.utc)
-
-        # Allow 1-second tolerance
-        assert abs((actual_utc - expected_utc).total_seconds()) < 1.0
-
-    def test_booking_open_dt_dst_boundary(self):
-        """
-        Booking window calculation works across the DST spring-forward boundary.
-
-        Last Sunday of March 2026 is March 29. Madrid springs forward at 02:00 CET → 03:00 CEST.
-        Lesson on Monday 30 March at 13:00 Madrid.
-        booking_open = Monday March 23 at 12:30 Madrid (CET, UTC+1) = 11:30 UTC.
-        """
-        import pytz
-        from datetime import datetime as dt
-
-        local_tz = pytz.timezone("Europe/Madrid")
-        lesson_dt = local_tz.localize(dt(2026, 3, 30, 13, 0, 0))
-        booking_open = lesson_dt - timedelta(days=7, minutes=30)
-
-        # March 23 is in CET (UTC+1), so 12:30 Madrid = 11:30 UTC
-        expected_utc = datetime(2026, 3, 23, 11, 30, 0, tzinfo=timezone.utc)
-        # Fix: need to re-localize to get correct offset for the result of timedelta
-        booking_open_fixed = local_tz.localize(booking_open.replace(tzinfo=None))
-        actual_utc_fixed = booking_open_fixed.astimezone(timezone.utc)
-
-        assert abs((actual_utc_fixed - expected_utc).total_seconds()) < 1.0
 
     def test_rule_due_recently_opened_window(self, capsys):
         """
         If booking window opened 60s ago (within 5 min grace period), rule is still due.
 
         Lesson: Wednesday 2026-04-15 13:00 Madrid
-        booking_open_dt = 2026-04-08 12:30 Madrid = 2026-04-08 10:30 UTC
+        booking_open_dt = midnight 2026-04-08 Madrid = 2026-04-07 22:00:02 UTC
 
-        Freeze at 10:31:00 UTC (60s AFTER 10:30:00)
+        Freeze at 22:01:00 UTC (58s AFTER the window opened)
         """
         rules = make_rules(
             weekday="wed",
@@ -363,7 +320,7 @@ class TestRuleEvaluation:
         available = [make_available("184", "Maria Garcia")]
 
         book_fn = run_due_with_mocks(
-            frozen_time="2026-04-08T10:31:00+00:00",
+            frozen_time="2026-04-07T22:01:00+00:00",
             rules=rules,
             available_teachers=available,
         )
@@ -373,8 +330,8 @@ class TestRuleEvaluation:
         """
         If booking window opened 6 minutes ago (> 5 min grace period), rule is NOT due.
 
-        booking_open_dt = 2026-04-08 10:30:00 UTC
-        Freeze at 10:36:00 UTC (6 minutes after)
+        booking_open_dt = 2026-04-07 22:00:02 UTC
+        Freeze at 22:06:00 UTC (~6 minutes after)
         """
         rules = make_rules(
             weekday="wed",
@@ -384,11 +341,54 @@ class TestRuleEvaluation:
         available = [make_available("184", "Maria Garcia")]
 
         book_fn = run_due_with_mocks(
-            frozen_time="2026-04-08T10:36:00+00:00",
+            frozen_time="2026-04-07T22:06:00+00:00",
             rules=rules,
             available_teachers=available,
         )
         assert not book_fn.called
+
+
+class TestSharedMidnightWindow:
+    """
+    Every rule on the same weekday now opens at the same midnight, so one run
+    books several lessons. Rule 1 waits out the last minute; the rest find the
+    wait already elapsed and go straight through.
+    """
+
+    def test_two_rules_same_day_both_booked(self):
+        rules = SchedulingRules(
+            timezone="Europe/Madrid",
+            credentials=ScheduleCredentials(
+                email="test@example.com", password="secret"
+            ),
+            rules=[
+                BookingRule(
+                    enabled=True,
+                    weekday="wed",
+                    start_time=t,
+                    slots=1,
+                    preferred_teachers=["Maria Garcia"],
+                )
+                for t in ("13:00", "17:00")
+            ],
+        )
+
+        book_fn = run_due_with_mocks(
+            frozen_time="2026-04-07T21:59:00+00:00",
+            rules=rules,
+            available_teachers=[make_available("184", "Maria Garcia")],
+            book_results=[
+                {"status": "success", "id": "1"},
+                {"status": "success", "id": "2"},
+            ],
+        )
+
+        assert book_fn.call_count == 2
+        booked_slots = sorted(call.args[2] for call in book_fn.call_args_list)
+        assert booked_slots == [
+            "2026-04-15T13:00:00+02:00",
+            "2026-04-15T17:00:00+02:00",
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -398,12 +398,11 @@ class TestRuleEvaluation:
 
 class TestHolidays:
     def test_holiday_skips_rule(self, capsys):
-        # Wed May 6, 2026 12:59:00
-        # This is 2 minutes before Wed May 13 13:00 booking window opens (7 days + 30m offset)
-        # 13:00 - 30m = 12:30. 7 days before is Wed May 6 12:30.
-        # At 12:59, it IS within the 2 minute precheck window (lead time is 120s).
+        # Tue May 5, 2026 23:59:00 Madrid — 62s before the window for a lesson
+        # on Wed May 13 opens (midnight on Wed May 6, i.e. 7 days earlier), so
+        # inside the 120s precheck lead. Without the holiday the rule is due.
 
-        frozen_time = "2026-05-06 12:59:00"
+        frozen_time = "2026-05-05 23:59:00"
         rules = make_rules(weekday="wed", start_time="13:00")
         # Add May 13 as a holiday
         rules.holidays = ["2026-05-13"]
@@ -420,7 +419,7 @@ class TestHolidays:
         assert len(due_rules) == 0, "Should have skipped because of holiday"
 
     def test_upcoming_skips_holiday(self):
-        frozen_time = "2026-05-06 12:00:00"
+        frozen_time = "2026-05-05 23:00:00"
         rules = make_rules(weekday="wed", start_time="13:00")
         rules.holidays = ["2026-05-13"]
 
@@ -452,7 +451,7 @@ class TestCandidateSelection:
         ]
 
         book_fn = run_due_with_mocks(
-            frozen_time="2026-04-08T10:29:00+00:00",
+            frozen_time="2026-04-07T21:59:00+00:00",
             rules=rules,
             available_teachers=available,
         )
@@ -473,7 +472,7 @@ class TestCandidateSelection:
         available = [make_available("184", "Maria Garcia")]
 
         book_fn = run_due_with_mocks(
-            frozen_time="2026-04-08T10:29:00+00:00",
+            frozen_time="2026-04-07T21:59:00+00:00",
             rules=rules,
             available_teachers=available,
         )
@@ -486,7 +485,7 @@ class TestCandidateSelection:
         )
 
         book_fn = run_due_with_mocks(
-            frozen_time="2026-04-08T10:29:00+00:00",
+            frozen_time="2026-04-07T21:59:00+00:00",
             rules=rules,
             available_teachers=[],  # nobody available
         )
@@ -624,7 +623,7 @@ class TestAlreadyBooked:
         available = [make_available("184", "Maria Garcia")]
 
         book_fn = run_due_with_mocks(
-            frozen_time="2026-04-08T10:29:00+00:00",
+            frozen_time="2026-04-07T21:59:00+00:00",
             rules=rules,
             available_teachers=available,
             existing_bookings=existing,
@@ -654,7 +653,7 @@ class TestAlreadyBooked:
         ]
 
         book_fn = run_due_with_mocks(
-            frozen_time="2026-04-08T10:29:00+00:00",
+            frozen_time="2026-04-07T21:59:00+00:00",
             rules=rules,
             available_teachers=[make_available("184", "Maria Garcia")],
             existing_bookings=existing,
@@ -680,7 +679,7 @@ class TestAlreadyBooked:
         ]
 
         book_fn = run_due_with_mocks(
-            frozen_time="2026-04-08T10:29:00+00:00",
+            frozen_time="2026-04-07T21:59:00+00:00",
             rules=rules,
             available_teachers=[make_available("184", "Maria Garcia")],
             existing_bookings=existing,
@@ -728,7 +727,7 @@ class TestDailyLimit:
         ]
 
         book_fn = run_due_with_mocks(
-            frozen_time="2026-04-08T10:29:00+00:00",
+            frozen_time="2026-04-07T21:59:00+00:00",
             rules=rules,
             available_teachers=available,
             existing_bookings=existing,
@@ -757,7 +756,7 @@ class TestDailyLimit:
         available = [make_available("184", "Maria Garcia")]
 
         book_fn = run_due_with_mocks(
-            frozen_time="2026-04-08T10:29:00+00:00",
+            frozen_time="2026-04-07T21:59:00+00:00",
             rules=rules,
             available_teachers=available,
             existing_bookings=existing,
@@ -802,7 +801,7 @@ class TestRetryLogic:
         ]
 
         book_fn = run_due_with_mocks(
-            frozen_time="2026-04-08T10:29:00+00:00",
+            frozen_time="2026-04-07T21:59:00+00:00",
             rules=rules,
             available_teachers=available,
             book_results=book_results,
@@ -824,7 +823,7 @@ class TestRetryLogic:
         book_results = [timing_error, timing_error, timing_error]
 
         book_fn = run_due_with_mocks(
-            frozen_time="2026-04-08T10:29:00+00:00",
+            frozen_time="2026-04-07T21:59:00+00:00",
             rules=rules,
             available_teachers=available,
             book_results=book_results,
@@ -860,7 +859,7 @@ class TestRetryLogic:
 
         with patch.object(sched_module, "_refresh_schedule_token", return_value=True):
             book_fn = run_due_with_mocks(
-                frozen_time="2026-04-08T10:29:00+00:00",
+                frozen_time="2026-04-07T21:59:00+00:00",
                 rules=rules,
                 available_teachers=[make_available("184", "Maria Garcia")],
                 book_results=book_results,
@@ -884,7 +883,7 @@ class TestRetryLogic:
 
         with patch.object(sched_module, "_refresh_schedule_token") as refresh:
             run_due_with_mocks(
-                frozen_time="2026-04-08T10:29:00+00:00",
+                frozen_time="2026-04-07T21:59:00+00:00",
                 rules=rules,
                 available_teachers=[make_available("184", "Maria Garcia")],
                 book_results=[misleading],
@@ -908,7 +907,7 @@ class TestRetryLogic:
         book_results = [generic_error, {"status": "success", "id": "9999"}]
 
         book_fn = run_due_with_mocks(
-            frozen_time="2026-04-08T10:29:00+00:00",
+            frozen_time="2026-04-07T21:59:00+00:00",
             rules=rules,
             available_teachers=available,
             book_results=book_results,
@@ -933,7 +932,7 @@ class TestForceMode:
 
         # Freeze at a time far from the booking window (not due)
         book_fn = run_due_with_mocks(
-            frozen_time="2026-04-01T10:00:00+00:00",  # Far from April 8 window
+            frozen_time="2026-04-01T10:00:00+00:00",  # Far from any midnight window
             rules=rules,
             available_teachers=available,
             force=True,
@@ -948,7 +947,7 @@ class TestForceMode:
         available = [make_available("184", "Maria Garcia")]
 
         book_fn = run_due_with_mocks(
-            frozen_time="2026-04-08T10:29:00+00:00",
+            frozen_time="2026-04-07T21:59:00+00:00",
             rules=rules,
             available_teachers=available,
             force_soft=True,
@@ -966,7 +965,7 @@ class TestLock:
         """If acquire_lock returns None, run_due_process exits early."""
         logger.set_enabled(True)
         try:
-            with freeze_time("2026-04-08T10:29:00+00:00"):
+            with freeze_time("2026-04-07T21:59:00+00:00"):
                 with (
                     patch.object(sched_module, "acquire_lock", return_value=None),
                     patch.object(sched_module, "book_lesson") as book_fn,
@@ -1022,7 +1021,7 @@ class TestBookingsCacheUpdate:
             make_available("159", "Carlos Lopez"),
         ]
 
-        frozen_time = "2026-04-08T10:29:00+00:00"
+        frozen_time = "2026-04-07T21:59:00+00:00"
 
         with freeze_time(frozen_time) as frozen:
             with (
@@ -1079,7 +1078,7 @@ class TestTeacherCache:
         """run_due_process exits early with a message when teachers.json is missing."""
         logger.set_enabled(True)
         try:
-            with freeze_time("2026-04-08T10:29:00+00:00"):
+            with freeze_time("2026-04-07T21:59:00+00:00"):
                 with (
                     patch.object(sched_module, "load_teacher_cache", return_value={}),
                     patch.object(
@@ -1115,7 +1114,7 @@ class TestRunState:
 
         with patch.object(sched_module.runstate, "append") as append_fn:
             run_due_with_mocks(
-                frozen_time="2026-04-08T10:29:00+00:00",
+                frozen_time="2026-04-07T21:59:00+00:00",
                 rules=rules,
                 available_teachers=[make_available("184", "Maria Garcia")],
             )
@@ -1135,7 +1134,7 @@ class TestRunState:
 
         with patch.object(sched_module.runstate, "append") as append_fn:
             run_due_with_mocks(
-                frozen_time="2026-04-08T10:29:00+00:00",
+                frozen_time="2026-04-07T21:59:00+00:00",
                 rules=rules,
                 available_teachers=[make_available("184", "Maria Garcia")],
                 force_soft=True,
@@ -1154,7 +1153,7 @@ class TestRunState:
 
         with patch.object(sched_module.runstate, "append") as append_fn:
             run_due_with_mocks(
-                frozen_time="2026-04-08T10:29:00+00:00",
+                frozen_time="2026-04-07T21:59:00+00:00",
                 rules=rules,
                 available_teachers=[],
             )
@@ -1165,7 +1164,7 @@ class TestRunState:
 
     def test_crash_records_crashed_and_reraises(self):
         """The traceback must still escape so the process exits non-zero."""
-        with freeze_time("2026-04-08T10:29:00+00:00"):
+        with freeze_time("2026-04-07T21:59:00+00:00"):
             with (
                 patch.object(sched_module.runstate, "append") as append_fn,
                 patch.object(
@@ -1192,7 +1191,7 @@ class TestRunState:
 
     def test_locked_run_writes_no_record(self):
         """The loser must not overwrite the panel mid-booking."""
-        with freeze_time("2026-04-08T10:29:00+00:00"):
+        with freeze_time("2026-04-07T21:59:00+00:00"):
             with (
                 patch.object(sched_module.runstate, "append") as append_fn,
                 patch.object(sched_module, "acquire_lock", return_value=None),

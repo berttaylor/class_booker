@@ -95,7 +95,7 @@ Bind mounts (all gitignored, so they must exist on the host): `scheduling_rules/
 
 `.env` is **not** mounted — `env_file:` injects its contents as environment variables, so the file itself never enters the container and `chmod 600` on the host stays meaningful. `AUTH_HASH_ADMIN`/`AUTH_HASH_LEIGH` need every `$` doubled in `.env` (see `.env.example`); `make hash` handles it.
 
-`TZ=Europe/Madrid` is set in the Dockerfile. Booking arithmetic is UTC-internal, but the **cron trigger times are local** — without TZ the `:29`/`:59` windows fire in the wrong hour.
+`TZ=Europe/Madrid` is set in the Dockerfile. The booking window is **local midnight** and the **cron trigger times are local** — without TZ both land in the wrong hour.
 
 Local development: `make up` → `http://127.0.0.1:8008`, the same login page as production (no dev bypass — one auth code path everywhere). The overlay is `compose.dev.yml`, gitignored and **never auto-loaded** (compose only auto-loads the name `compose.override.yml`), so `make` passes it with `-f`; `make` also creates it from `compose.dev.yml.example` on first use. It does two things: publishes `web` on `127.0.0.1:8008`, and parks **caddy and cron** behind a `manual` profile. Publishing that port is only safe because auth lives in Flask — the port leads to the login page, not past it. Caddy is skipped locally because with auth out of it, all it adds is TLS a laptop cannot get for the real domain. `deploy.sh` passes `-f compose.yml` explicitly regardless.
 
@@ -118,11 +118,15 @@ Outcomes are derived from `_counts` — tallies incremented at the sites that al
 
 `--force-soft` cannot inflate the booked count: `_attempt_booking` returns at the `[DRY RUN]` branch before reaching the `BOOKED` site. A `locked` run deliberately writes **no** record, so the loser of a lock race can't clobber the panel while a real booking is mid-flight. A crash records `crashed`, pushes, and **re-raises** — the traceback must still reach stderr and the exit code must stay non-zero so the healthcheck ping is skipped.
 
-`next_cron_run()` hardcodes the `:29`/`:59` pair from `crontab`. **Change both together.**
+`next_cron_run()` hardcodes the `:29`/`:59` pair from `crontab`. **Change both together** — and note the `:59` entry is what catches the midnight booking window.
 
 **Logging** (`app/logger.py`): appends one JSON object per line to `logs/events.jsonl`. Append-only, so a killed process can at worst leave a single torn line, which the reader skips. `logs/main.json` is the pre-JSONL archive and stays readable in the log viewer; `view_log()` uses `deque(f, maxlen=1000)` so the tail renders without parsing the whole file.
 
-The booking window is `lesson - 7 days - 30 min`, computed in **UTC** and converted back to local time. Doing that arithmetic on the local wall clock shifts the window by an hour across a DST boundary — see `TestBookingWindowDST`.
+The booking window is **local midnight on the day 7 days before the lesson** (plus `BOOKING_OPEN_BUFFER_SECONDS`, currently 2 — the window is a server-side day boundary, so aiming a hair past it is safer than hitting `00:00:00.000`). The platform opens a whole day's slots at once and leaves them open, so there is no per-lesson offset any more; before August 2026 it was `lesson - 7 days - 30 min` and the arithmetic was done in UTC on purpose, to keep an exact absolute offset. That reasoning is now inverted: midnight is a wall-clock concept, so the date is localised directly and the absolute gap to the lesson legitimately moves by an hour across a DST boundary — see `TestBookingWindowDST`.
+
+Because the whole day opens at once, **every rule falling on the same weekday is due in the same run**. The `:59` crontab entry is the one that matters: at 23:59 the window is inside `BOOKING_PRECHECK_LEAD_SECONDS`, so `_wait_for_window` waits out the last minute and the rules book back to back from midnight (the first waits, the rest find the wait already elapsed). One missed 23:59 run therefore costs that whole day's lessons, not one lesson — the 5-minute staleness grace in `_evaluate_rules` is deliberately not wide enough to let a later run recover, so recovery is manual.
+
+`_evaluate_rules` looks 22 days ahead, not 15: the nearest still-bookable occurrence is up to 8 days out (today's midnight has usually passed), so two consecutive holidays on the same weekday put the next viable lesson at +22.
 
 `_is_already_booked` compares **time ranges**, not start times: recurring classes booked on the website are 60 minutes long, so a rule starting partway through one would otherwise double-book. It checks every booking regardless of date, so a lesson crossing midnight is caught.
 

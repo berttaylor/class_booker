@@ -4,8 +4,10 @@
 # next_cron_run() in app/runstate.py hardcodes the :29/:59 pair to tell the web
 # UI when the next check is due. Change both together.
 
-# Book due lessons. The window opens at lesson - 7d - 30min, so checking twice
-# an hour is enough to catch every window.
+# Book due lessons. A day's slots all open at 00:00 local time 7 days earlier,
+# so the :59 run at 23:59 is the one that matters: it sees the window inside the
+# 120s precheck lead and waits out the last minute. Twice an hour is still
+# enough, and keeps the rest of the day covered.
 # The ping is a dead-man's switch: on a non-zero exit it is skipped, and
 # Healthchecks alerts when pings stop arriving. Unset HC_PING_URL disables it.
 29,59 * * * * cd /app && python main.py run-due && { [ -z "$HC_PING_URL" ] || curl -fsS -m 10 -o /dev/null "$HC_PING_URL"; }

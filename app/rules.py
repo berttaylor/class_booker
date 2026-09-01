@@ -12,8 +12,16 @@ VALID_WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 # Absolute so schedule discovery works regardless of working directory.
 SCHEDULING_RULES_DIR = Path(__file__).parent.parent / "scheduling_rules"
 
+# The platform opens a whole day's slots at once: any lesson on day D becomes
+# bookable at 00:00 local time on D - BOOKING_OPEN_OFFSET_DAYS.
 BOOKING_OPEN_OFFSET_DAYS = 7
-BOOKING_OPEN_OFFSET_MINUTES = 30
+
+# Aim a hair past midnight rather than exactly on it. The window is a
+# server-side day boundary now, not a slot-time offset, so a server that flips
+# the day a moment late would reject a request sent at 00:00:00.000. Tune this
+# if the first attempt of a run starts failing on timing.
+BOOKING_OPEN_BUFFER_SECONDS = 2
+
 BOOKING_PRECHECK_LEAD_SECONDS = 120
 
 

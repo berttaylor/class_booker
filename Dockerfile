@@ -29,8 +29,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Booking windows are computed in UTC but the cron trigger times are local, so
-# the container clock has to match the schedule's timezone.
+# The booking window is local midnight 7 days before the lesson, and the cron
+# trigger times are local too, so the container clock has to match the
+# schedule's timezone.
 ENV TZ=Europe/Madrid \
     PYTHONPATH=/app \
     PYTHONUNBUFFERED=1

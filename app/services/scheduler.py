@@ -17,7 +17,7 @@ from app.rules import (
     load_active_schedules,
     SchedulingRules,
     BOOKING_OPEN_OFFSET_DAYS,
-    BOOKING_OPEN_OFFSET_MINUTES,
+    BOOKING_OPEN_BUFFER_SECONDS,
     BOOKING_PRECHECK_LEAD_SECONDS,
 )
 from app.teachers import load_teacher_cache, validate_rules_against_cache
@@ -107,7 +107,7 @@ def get_synced_now(client: BookingClient) -> tuple[dt, float]:
 
 def _evaluate_rules(rules_data, now_local):
     """
-    Iterates all enabled rules over the next 15 days, expanding each rule's
+    Iterates all enabled rules over the next 22 days, expanding each rule's
     slots into individual booking entries.
     Returns (due_rules, rule_lesson_times, rule_open_times, all_upcoming_rules).
     due_rules entries are (rule, slot_key) tuples; dicts are keyed by slot_key.
@@ -123,7 +123,10 @@ def _evaluate_rules(rules_data, now_local):
             continue
 
         found_occurrence = False
-        for days_ahead in range(15):
+        # 22 days, not 15: the nearest still-bookable occurrence is up to 8 days
+        # out (today's midnight has usually passed already), so two consecutive
+        # holidays on the same weekday put the next viable lesson at +22.
+        for days_ahead in range(22):
             target_date = (now_local + timedelta(days=days_ahead)).date()
             if target_date.isoformat() in rules_data.holidays:
                 continue
@@ -136,18 +139,15 @@ def _evaluate_rules(rules_data, now_local):
                 lesson_time = dt.strptime(slot_time_str, "%H:%M").time()
                 lesson_dt = local_tz.localize(dt.combine(target_date, lesson_time))
 
-                # Offset in absolute time: subtract in UTC, then convert back.
-                # Doing the arithmetic on the local wall clock and re-localising
-                # shifts the window by an hour across a DST boundary — an hour
-                # early in October (booking rejected), an hour late in March
-                # (race already lost).
-                booking_open_dt = (
-                    lesson_dt.astimezone(pytz.utc)
-                    - timedelta(
-                        days=BOOKING_OPEN_OFFSET_DAYS,
-                        minutes=BOOKING_OPEN_OFFSET_MINUTES,
-                    )
-                ).astimezone(local_tz)
+                # Midnight is a wall-clock concept, so localise the date
+                # rather than subtracting an absolute offset from the lesson.
+                # The gap to the lesson is therefore 7d ± 1h across a DST
+                # boundary, and that is correct: the platform opens the day, not
+                # a fixed number of hours before the class.
+                open_date = target_date - timedelta(days=BOOKING_OPEN_OFFSET_DAYS)
+                booking_open_dt = local_tz.localize(
+                    dt.combine(open_date, dt.min.time())
+                ) + timedelta(seconds=BOOKING_OPEN_BUFFER_SECONDS)
 
                 if booking_open_dt < now_local - timedelta(minutes=5):
                     continue
