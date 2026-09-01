@@ -142,6 +142,7 @@ def run_due_with_mocks(
     force: bool = False,
     force_soft: bool = False,
     token: str = "fake.token.here",
+    favorite_ids: set | None = None,
 ):
     """
     Run run_due_process with all external calls patched.
@@ -153,6 +154,8 @@ def run_due_with_mocks(
         existing_bookings = []
     if book_results is None:
         book_results = [{"status": "success", "id": "9999"}]
+    if favorite_ids is None:
+        favorite_ids = {"184", "159"}
 
     with freeze_time(frozen_time) as frozen:
         # We also need to patch get_synced_now to return an advancing time
@@ -180,6 +183,9 @@ def run_due_with_mocks(
                 sched_module, "get_available_teachers", return_value=available_teachers
             ),
             patch.object(sched_module, "get_tutors_map", return_value={}),
+            patch.object(
+                sched_module, "get_favorite_tutor_ids", return_value=favorite_ids
+            ),
             patch.object(sched_module, "book_lesson", side_effect=book_results),
             patch.object(sched_module, "acquire_lock", return_value=MagicMock()),
             patch.object(sched_module, "release_lock"),
@@ -1069,6 +1075,11 @@ class TestBookingsCacheUpdate:
                 patch.object(sched_module, "get_tutors_map", return_value={}),
                 patch.object(
                     sched_module,
+                    "get_favorite_tutor_ids",
+                    return_value={"184", "159"},
+                ),
+                patch.object(
+                    sched_module,
                     "book_lesson",
                     return_value={"status": "success", "id": "9999"},
                 ) as book_fn,
@@ -1087,6 +1098,85 @@ class TestBookingsCacheUpdate:
 
         # book_lesson should only be called once — second rule sees the slot as taken
         assert book_fn.call_count == 1
+
+
+class TestUnbookableTeachers:
+    """
+    The calendar is favourites-only, so a rule naming a non-favourite can never
+    book. That failure used to be reported as "No suitable teachers available",
+    which reads identically to a genuinely full calendar.
+    """
+
+    def test_non_favourite_is_flagged(self):
+        rules = make_rules(preferred_teachers=["Maria Garcia", "Carlos Lopez"])
+
+        # 184 is Maria Garcia in FAKE_CACHE; 159 (Carlos Lopez) is not favourited.
+        assert sched_module._unbookable_teachers(rules, FAKE_CACHE, {"184"}) == {
+            "Carlos Lopez"
+        }
+
+    def test_all_favourited_flags_nothing(self):
+        rules = make_rules(preferred_teachers=["Maria Garcia", "Carlos Lopez"])
+
+        assert (
+            sched_module._unbookable_teachers(rules, FAKE_CACHE, {"184", "159"})
+            == set()
+        )
+
+    def test_failed_favourites_lookup_accuses_nobody(self):
+        """An empty set means the lookup failed, not that nobody is favourited."""
+        rules = make_rules(preferred_teachers=["Maria Garcia"])
+
+        assert sched_module._unbookable_teachers(rules, FAKE_CACHE, set()) == set()
+
+    def test_disabled_rules_are_ignored(self):
+        rules = make_rules(preferred_teachers=["Carlos Lopez"])
+        rules.rules[0].enabled = False
+
+        assert sched_module._unbookable_teachers(rules, FAKE_CACHE, {"184"}) == set()
+
+    def test_reason_reaches_the_failure_log_and_push(self, capsys):
+        logger.set_enabled(True)
+        rules = make_rules(preferred_teachers=["Carlos Lopez"])
+
+        with patch.object(sched_module, "send_push") as push:
+            run_due_with_mocks(
+                frozen_time="2026-04-07T21:59:00+00:00",
+                rules=rules,
+                available_teachers=[],
+                favorite_ids={"184"},
+            )
+
+        out = capsys.readouterr().out
+        assert "Not favourited on the platform, so unbookable: Carlos Lopez" in out
+        assert "not favourited: Carlos Lopez" in out
+        assert any(
+            "not favourited: Carlos Lopez" in str(c) for c in push.call_args_list
+        )
+
+
+class TestRemovedTeacherNotResolved:
+    def test_removed_name_is_not_resolved_to_its_stale_id(self):
+        """
+        populate_teachers leaves a REMOVED name's last known id in place, and the
+        platform may have reassigned it. Resolving it would book a tutor the rule
+        never named.
+        """
+        cache = {"teachers": {"Renamed Teacher": {"id": 184, "status": "REMOVED"}}}
+        rule = make_rules(preferred_teachers=["Renamed Teacher"]).rules[0]
+        available = [make_available("184", "Somebody Else")]
+
+        with patch.object(sched_module, "load_teacher_cache", return_value=cache):
+            assert sched_module._get_candidates(rule, available, [], "2026-04-15") == []
+
+    def test_active_name_still_resolves(self):
+        rule = make_rules(preferred_teachers=["Maria Garcia"]).rules[0]
+        available = [make_available("184", "Maria Garcia")]
+
+        with patch.object(sched_module, "load_teacher_cache", return_value=FAKE_CACHE):
+            got = sched_module._get_candidates(rule, available, [], "2026-04-15")
+
+        assert [c["id"] for c in got] == ["184"]
 
 
 # ---------------------------------------------------------------------------

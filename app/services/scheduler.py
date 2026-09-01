@@ -9,7 +9,11 @@ from pathlib import Path
 
 from app.api.auth import login, is_token_expired
 from app.notifications import send_push
-from app.api.availability import get_available_teachers, get_tutors_map
+from app.api.availability import (
+    get_available_teachers,
+    get_favorite_tutor_ids,
+    get_tutors_map,
+)
 from app.api.booking import get_bookings, book_lesson
 from app.client import BookingClient
 from app.config import app_config
@@ -238,12 +242,16 @@ def _get_candidates(
     """
     available_teacher_ids = [str(t["id"]) for t in available_teachers]
 
-    # Resolve preferred teacher names → IDs via cache
+    # Resolve preferred teacher names → IDs via cache. REMOVED names are
+    # skipped: populate_teachers only refreshes the id of a name the API still
+    # returns, so a REMOVED entry keeps its last known id — which the platform
+    # may since have reassigned to a different tutor. Resolving it would book
+    # someone the rule never named.
     teachers_cache = load_teacher_cache().get("teachers", {})
     preferred_ids = [
         str(teachers_cache[name]["id"])
         for name in rule.preferred_teachers
-        if name in teachers_cache
+        if teachers_cache.get(name, {}).get("status") == "ACTIVE"
     ]
 
     # Preferred teachers intersection
@@ -275,6 +283,29 @@ def _get_candidates(
             logger.info(f"Removed: {cand['name']} ({tid}) — 60m limit")
 
     return final_candidates
+
+
+def _unbookable_teachers(rules_data, cache: dict, favorite_ids: set) -> set:
+    """
+    Names in the rules that belong to tutors who are not favourited.
+
+    /booking/favorites/calendar is favourites-only, so these can never show
+    availability however free they actually are. Without naming them the
+    failure reads "No suitable teachers available", which is exactly what a
+    genuinely full calendar reads like — and that ambiguity hid four dead rules
+    for days.
+    """
+    if not favorite_ids:
+        return set()  # lookup failed; do not accuse every teacher at once
+
+    teachers = cache.get("teachers", {})
+    return {
+        name
+        for rule in rules_data.rules
+        if rule.enabled
+        for name in rule.preferred_teachers
+        if str(teachers.get(name, {}).get("id")) not in favorite_ids
+    }
 
 
 def _wait_for_window(booking_open_dt, now_local, local_tz, client, slot_key=""):
@@ -516,6 +547,15 @@ def _run_schedule(
         # Fetched once per run, before any window wait — everything slow and
         # window-independent belongs on this side of the countdown.
         tutor_map = get_tutors_map(client)
+        unbookable = _unbookable_teachers(
+            rules_data, cache, get_favorite_tutor_ids(client)
+        )
+        if unbookable:
+            logger.warning(
+                f"Not favourited on the platform, so unbookable: "
+                f"{', '.join(sorted(unbookable))}",
+                schedule=schedule_name,
+            )
 
         for rule, slot_key in due_rules:
             target_slot_iso = rule_lesson_times[slot_key]
@@ -576,16 +616,21 @@ def _run_schedule(
                 duration,
             )
             if not candidates:
+                # Say which cause it was. "No teachers available" alone cannot
+                # distinguish a full calendar from a tutor who is not favourited
+                # and so was never in the calendar to begin with.
+                dead = [n for n in rule.preferred_teachers if n in unbookable]
+                reason = f" — not favourited: {', '.join(dead)}" if dead else ""
                 # Logged at INFO for historical continuity, but this is a real
                 # failure — the class does not get booked. The counter, not the
                 # log level, is what the status panel trusts.
                 _counts["failed"] += 1
                 logger.info(
-                    f"[{slot_key}] No suitable teachers available — skipping",
+                    f"[{slot_key}] No suitable teachers available{reason} — skipping",
                     schedule=schedule_name,
                 )
                 send_push(
-                    f"[{schedule_name}] No teachers available for {slot_key} on {target_date_str} at {target_start_time_str}",
+                    f"[{schedule_name}] No teachers available for {slot_key} on {target_date_str} at {target_start_time_str}{reason}",
                     priority=1,
                 )
                 continue

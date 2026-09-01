@@ -45,6 +45,47 @@ def get_tutors_map(client: BookingClient) -> Dict[str, Dict[str, Any]]:
     return tutor_map
 
 
+def get_favorite_tutor_ids(client: BookingClient) -> set[str]:
+    """
+    Returns the ids of the student's favourite tutors, as strings.
+
+    Worth having because /booking/favorites/calendar only ever advertises
+    favourites: a tutor named in the rules but not favourited can never show
+    availability, and the resulting failure is indistinguishable from a
+    genuinely full calendar. Returns an empty set on error, which suppresses
+    the diagnostic rather than inventing a wrong one.
+    """
+    ids: set[str] = set()
+    page = 1
+    last_page = 1
+
+    while page <= last_page:
+        response = client.get(
+            app_config.favorite_tutors_endpoint, params={"page": page}
+        )
+        if response.status_code != 200:
+            logger.warning(f"Favourites fetch failed: {response.status_code}")
+            return set()
+
+        try:
+            res_data = response.json()
+        except Exception as e:
+            logger.warning(f"Error parsing favourites page {page}: {e}")
+            return set()
+
+        for entry in res_data.get("data", []):
+            # tutor_id sits at the top level; the nested "tutor" object carries
+            # the display fields we do not need here.
+            tid = entry.get("tutor_id") or (entry.get("tutor") or {}).get("id")
+            if tid is not None:
+                ids.add(str(tid))
+
+        last_page = res_data.get("last_page", 1)
+        page += 1
+
+    return ids
+
+
 def _get_calendar_slots(client: BookingClient) -> List[Dict[str, Any]]:
     """
     Fetches the favourites calendar and flattens it into a single slot list.

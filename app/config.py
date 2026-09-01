@@ -24,6 +24,7 @@ class AppConfig(BaseModel):
     my_classes_endpoint: str
     cancel_booking_endpoint: str
     tutors_list_endpoint: str
+    favorite_tutors_endpoint: str
     quota_endpoint: str
 
 
