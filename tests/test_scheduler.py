@@ -179,6 +179,7 @@ def run_due_with_mocks(
             patch.object(
                 sched_module, "get_available_teachers", return_value=available_teachers
             ),
+            patch.object(sched_module, "get_tutors_map", return_value={}),
             patch.object(sched_module, "book_lesson", side_effect=book_results),
             patch.object(sched_module, "acquire_lock", return_value=MagicMock()),
             patch.object(sched_module, "release_lock"),
@@ -1046,6 +1047,7 @@ class TestBookingsCacheUpdate:
                 patch.object(
                     sched_module, "get_available_teachers", return_value=available
                 ),
+                patch.object(sched_module, "get_tutors_map", return_value={}),
                 patch.object(
                     sched_module,
                     "book_lesson",

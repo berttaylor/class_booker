@@ -79,7 +79,10 @@ def get_teacher_slots(client: BookingClient, teacher_id: str) -> list:
 
 
 def get_available_teachers(
-    client: BookingClient, lesson_datetime: str, duration_minutes: int = 30
+    client: BookingClient,
+    lesson_datetime: str,
+    duration_minutes: int = 30,
+    tutor_map: Dict[str, Dict[str, Any]] | None = None,
 ) -> list:
     """
     Returns a list of available teachers for a given lesson datetime.
@@ -88,12 +91,18 @@ def get_available_teachers(
     The calendar only ever advertises 30-minute slots, so a longer lesson
     requires every consecutive half-hour it spans to be free — a teacher with
     only the first half open cannot take a 60-minute class.
+
+    Pass `tutor_map` to skip the /tutors walk. It is 11 paginated requests and
+    only supplies display names, so the scheduler fetches it once *before* the
+    booking window opens rather than paying ~15s for it at the moment the race
+    starts.
     """
     slots = _get_calendar_slots(client)
     if not slots:
         return []
 
-    tutor_map = get_tutors_map(client)
+    if tutor_map is None:
+        tutor_map = get_tutors_map(client)
     target_utc = normalize_datetime(lesson_datetime)
     local_tz = pytz.timezone(app_config.timezone)
 

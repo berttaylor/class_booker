@@ -9,7 +9,7 @@ from pathlib import Path
 
 from app.api.auth import login, is_token_expired
 from app.notifications import send_push
-from app.api.availability import get_available_teachers
+from app.api.availability import get_available_teachers, get_tutors_map
 from app.api.booking import get_bookings, book_lesson, get_focus
 from app.client import BookingClient
 from app.config import app_config
@@ -251,7 +251,7 @@ def _get_candidates(
     ]
 
     candidate_info = ", ".join([f"{c['name']} ({c['id']})" for c in candidates])
-    logger.info(f"Preferred: {candidate_info}")
+    logger.info(f"Preferred: {candidate_info} (of {len(available_teachers)} available)")
 
     if not candidates:
         return []
@@ -526,8 +526,10 @@ def _run_schedule(
             b for b in bookings if b.get("status") == "approved" and not b.get("past")
         ]
 
-        # Fetched once per run, not per attempt — keeps the booking race clean.
+        # Both fetched once per run, before any window wait — everything slow
+        # and window-independent belongs on this side of the countdown.
         focus = get_focus(client)
+        tutor_map = get_tutors_map(client)
 
         for rule, slot_key in due_rules:
             target_slot_iso = rule_lesson_times[slot_key]
@@ -542,32 +544,6 @@ def _run_schedule(
             ):
                 logger.info(
                     f"[{slot_key}] Already booked — skipping", schedule=schedule_name
-                )
-                continue
-
-            available_teachers = get_available_teachers(
-                client, target_slot_iso, duration
-            )
-
-            candidates = _get_candidates(
-                rule,
-                available_teachers,
-                approved_bookings,
-                target_date_str,
-                duration,
-            )
-            if not candidates:
-                # Logged at INFO for historical continuity, but this is a real
-                # failure — the class does not get booked. The counter, not the
-                # log level, is what the status panel trusts.
-                _counts["failed"] += 1
-                logger.info(
-                    f"[{slot_key}] No suitable teachers available — skipping",
-                    schedule=schedule_name,
-                )
-                send_push(
-                    f"[{schedule_name}] No teachers available for {slot_key} on {target_date_str} at {target_start_time_str}",
-                    priority=1,
                 )
                 continue
 
@@ -596,6 +572,37 @@ def _run_schedule(
                         f"[{schedule_name}] Token refresh failed before booking {slot_key} — booking may fail",
                         priority=1,
                     )
+
+            # Availability is fetched *after* the window opens, not before.
+            # The platform only lists slots inside the 7-day booking horizon, so
+            # a calendar read at 23:59 for a lesson 8 days out comes back empty
+            # and the run gives up without ever waiting. Costs the seconds the
+            # calendar takes to page, which the all-day-open rules can afford.
+            available_teachers = get_available_teachers(
+                client, target_slot_iso, duration, tutor_map=tutor_map
+            )
+
+            candidates = _get_candidates(
+                rule,
+                available_teachers,
+                approved_bookings,
+                target_date_str,
+                duration,
+            )
+            if not candidates:
+                # Logged at INFO for historical continuity, but this is a real
+                # failure — the class does not get booked. The counter, not the
+                # log level, is what the status panel trusts.
+                _counts["failed"] += 1
+                logger.info(
+                    f"[{slot_key}] No suitable teachers available — skipping",
+                    schedule=schedule_name,
+                )
+                send_push(
+                    f"[{schedule_name}] No teachers available for {slot_key} on {target_date_str} at {target_start_time_str}",
+                    priority=1,
+                )
+                continue
 
             success = _attempt_booking(
                 client,
