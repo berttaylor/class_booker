@@ -18,6 +18,7 @@ from app.rules import (
     SchedulingRules,
     BOOKING_OPEN_OFFSET_DAYS,
     BOOKING_OPEN_BUFFER_SECONDS,
+    BOOKING_OPEN_GRACE_MINUTES,
     BOOKING_PRECHECK_LEAD_SECONDS,
 )
 from app.teachers import load_teacher_cache, validate_rules_against_cache
@@ -149,7 +150,9 @@ def _evaluate_rules(rules_data, now_local):
                     dt.combine(open_date, dt.min.time())
                 ) + timedelta(seconds=BOOKING_OPEN_BUFFER_SECONDS)
 
-                if booking_open_dt < now_local - timedelta(minutes=5):
+                if booking_open_dt < now_local - timedelta(
+                    minutes=BOOKING_OPEN_GRACE_MINUTES
+                ):
                     continue
 
                 found_occurrence = True

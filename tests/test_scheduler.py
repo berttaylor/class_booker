@@ -327,12 +327,10 @@ class TestRuleEvaluation:
         )
         assert book_fn.called
 
-    def test_rule_not_due_long_ago_opened_window(self, capsys):
+    def test_rule_still_due_within_widened_grace(self, capsys):
         """
-        If booking window opened 6 minutes ago (> 5 min grace period), rule is NOT due.
-
-        booking_open_dt = 2026-04-07 22:00:02 UTC
-        Freeze at 22:06:00 UTC (~6 minutes after)
+        The window opened 29 minutes ago — the 00:29 cron run's retry. Inside
+        the 60 min grace, so still due.
         """
         rules = make_rules(
             weekday="wed",
@@ -342,7 +340,28 @@ class TestRuleEvaluation:
         available = [make_available("184", "Maria Garcia")]
 
         book_fn = run_due_with_mocks(
-            frozen_time="2026-04-07T22:06:00+00:00",
+            frozen_time="2026-04-07T22:29:00+00:00",
+            rules=rules,
+            available_teachers=available,
+        )
+        assert book_fn.called
+
+    def test_rule_not_due_long_ago_opened_window(self, capsys):
+        """
+        If the window opened 70 minutes ago (> 60 min grace), rule is NOT due.
+
+        booking_open_dt = 2026-04-07 22:00:02 UTC
+        Freeze at 23:10:00 UTC (~70 minutes after)
+        """
+        rules = make_rules(
+            weekday="wed",
+            start_time="13:00",
+            preferred_teachers=["Maria Garcia"],
+        )
+        available = [make_available("184", "Maria Garcia")]
+
+        book_fn = run_due_with_mocks(
+            frozen_time="2026-04-07T23:10:00+00:00",
             rules=rules,
             available_teachers=available,
         )

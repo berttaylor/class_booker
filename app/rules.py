@@ -24,6 +24,13 @@ BOOKING_OPEN_BUFFER_SECONDS = 2
 
 BOOKING_PRECHECK_LEAD_SECONDS = 120
 
+# How long a window stays actionable after it opens. The platform leaves a day's
+# slots bookable all week, so this only bounds how many times we retry — the
+# :29 and :59 runs after midnight get a second and third go at a window the
+# 23:59 run failed to book. Wider would keep retrying (and keep pushing) for a
+# week; narrower loses the whole day's lessons to one bad run.
+BOOKING_OPEN_GRACE_MINUTES = 60
+
 
 class BookingRule(BaseModel):
     weekday: str
