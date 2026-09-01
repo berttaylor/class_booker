@@ -41,7 +41,7 @@ This is a Python CLI tool (Typer) that automates booking Spanish classes on worl
 - **Calendar** (`GET /booking/favorites/calendar`) is keyed by date, covers ~9 days, 30-minute slots, and returns **favourite tutors only**. `get_bookings()` normalises `/students/me/my-classes` back to the flat `staff_id`/`date`/`start_time` shape the scheduler expects, converting UTC to the configured timezone.
 - **No server-time endpoint** — `get_server_time()` reads the HTTP `Date` header off `/students/me/quota` (1-second resolution).
 - **`/tutors` is paginated** (Laravel paginator, ~9 per page); `get_tutors_map()` walks every page.
-- **Confirm sends `focus_type` + `activity_suggestion_id`** from `/students/me/activities`. `get_focus()` picks the top activity once per run and degrades to omitting both if unavailable.
+- **Confirm deliberately sends no `focus_type` / `activity_suggestion_id`**, so bookings land with `activity_id: null` and the tutor or coach picks the topic — the same state as a class booked on the website. It used to send `activities[0]` from `/students/me/activities`, but that list is ordered oldest-first, so every booking got tagged with the account's very first (already completed) activity and all the classes came out on one subject. `test_no_activity_is_ever_sent` guards it.
 
 **Module layout:**
 ```

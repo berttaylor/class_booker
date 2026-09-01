@@ -3,7 +3,7 @@ import json as _json
 import httpx
 
 from tests.base import BaseTest
-from app.api.booking import book_lesson, get_bookings, cancel_booking, get_focus
+from app.api.booking import book_lesson, get_bookings, cancel_booking
 
 _AUTHED_TOKEN = "header.eyJleHAiOiA5OTk5OTk5OTk5fQ.sig"
 
@@ -99,35 +99,24 @@ class TestBookLessonPayload(BaseTest):
         book_lesson(self.mock_client, 4584, "2026-08-03T13:00:00+02:00")
         assert self.captured["confirm"]["tutor_id"] == "4584"
 
-    def test_hold_payload_has_no_focus_fields(self):
-        """hold-slot takes only the slot identity; focus belongs to confirm."""
+    def test_hold_payload_is_only_the_slot(self):
         self._mock_flow()
-        book_lesson(
-            self.mock_client,
-            "4584",
-            "2026-08-03T13:00:00+02:00",
-            focus_type="Simple Past",
-            activity_suggestion_id=2718,
-        )
+        book_lesson(self.mock_client, "4584", "2026-08-03T13:00:00+02:00")
 
         assert set(self.captured["hold"]) == {"tutor_id", "start_time", "end_time"}
 
-    def test_focus_fields_included_when_provided(self):
-        payload = self._confirm_payload(
-            "2026-08-03T13:00:00+02:00",
-            focus_type="Simple Past",
-            activity_suggestion_id=2718,
-        )
+    def test_no_activity_is_ever_sent(self):
+        """
+        Neither call may name an activity. Sending one tagged every booking with
+        the account's oldest, already-completed activity, so the classes all
+        came out with the same subject.
+        """
+        self._mock_flow()
+        book_lesson(self.mock_client, "4584", "2026-08-03T13:00:00+02:00")
 
-        assert payload["focus_type"] == "Simple Past"
-        assert payload["activity_suggestion_id"] == 2718
-
-    def test_focus_fields_omitted_when_absent(self):
-        """A failed activities lookup must not send null focus fields."""
-        payload = self._confirm_payload("2026-08-03T13:00:00+02:00")
-
-        assert "focus_type" not in payload
-        assert "activity_suggestion_id" not in payload
+        for call in ("hold", "confirm"):
+            assert "focus_type" not in self.captured[call]
+            assert "activity_suggestion_id" not in self.captured[call]
 
     def test_confirm_not_sent_when_hold_fails(self):
         self._mock_flow(hold_status=409)
@@ -160,41 +149,6 @@ class TestBookLessonPayload(BaseTest):
 
         assert result["status"] == "error"
         assert "500" in result["message"]
-
-
-# ---------------------------------------------------------------------------
-# get_focus
-# ---------------------------------------------------------------------------
-
-
-class TestGetFocus(BaseTest):
-    def setup_method(self, method):
-        super().setup_method(method)
-        self.mock_client.set_token(_AUTHED_TOKEN)
-
-    def test_returns_top_activity(self, activities_response):
-        self.router.get("/students/me/activities").mock(
-            return_value=httpx.Response(200, json=activities_response)
-        )
-
-        focus_type, activity_id = get_focus(self.mock_client)
-
-        assert activity_id == 2718
-        assert focus_type.startswith("Narrate personal")
-
-    def test_degrades_on_http_error(self):
-        self.router.get("/students/me/activities").mock(
-            return_value=httpx.Response(500)
-        )
-
-        assert get_focus(self.mock_client) == (None, None)
-
-    def test_degrades_on_empty_list(self):
-        self.router.get("/students/me/activities").mock(
-            return_value=httpx.Response(200, json={"data": []})
-        )
-
-        assert get_focus(self.mock_client) == (None, None)
 
 
 # ---------------------------------------------------------------------------

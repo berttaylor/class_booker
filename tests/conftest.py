@@ -97,12 +97,6 @@ def my_classes_response():
         return json.load(f)
 
 
-@pytest.fixture
-def activities_response():
-    with open(FIXTURES_DIR / "activities_response.json") as f:
-        return json.load(f)
-
-
 # ---------------------------------------------------------------------------
 # JWT helper
 # ---------------------------------------------------------------------------

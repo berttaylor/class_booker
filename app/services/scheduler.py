@@ -10,7 +10,7 @@ from pathlib import Path
 from app.api.auth import login, is_token_expired
 from app.notifications import send_push
 from app.api.availability import get_available_teachers, get_tutors_map
-from app.api.booking import get_bookings, book_lesson, get_focus
+from app.api.booking import get_bookings, book_lesson
 from app.client import BookingClient
 from app.config import app_config
 from app.rules import (
@@ -332,7 +332,6 @@ def _attempt_booking(
     credentials: dict,
     cache_file: Path,
     slot_key="",
-    focus: tuple = (None, None),
     duration_minutes: int = 30,
 ) -> bool:
     """
@@ -340,7 +339,6 @@ def _attempt_booking(
     Returns True on first success. Mutates approved_bookings on success.
     """
     max_retries = 3
-    focus_type, activity_suggestion_id = focus
 
     for cand in candidates:
         tid = str(cand["id"])
@@ -354,14 +352,7 @@ def _attempt_booking(
         logger.info(f"{prefix}Attempting: {tname} ({tid})")
 
         for attempt in range(max_retries):
-            res = book_lesson(
-                client,
-                tid,
-                target_slot_iso,
-                focus_type,
-                activity_suggestion_id,
-                duration_minutes,
-            )
+            res = book_lesson(client, tid, target_slot_iso, duration_minutes)
 
             # Auth error — refresh token and retry once. Keyed on the real
             # status code: a bare "401" substring also matches booking ids and
@@ -369,14 +360,7 @@ def _attempt_booking(
             if res.get("status_code") in (401, 403):
                 logger.info(f"{prefix}Re-auth: token rejected, refreshing...")
                 _refresh_schedule_token(client, credentials, cache_file)
-                res = book_lesson(
-                    client,
-                    tid,
-                    target_slot_iso,
-                    focus_type,
-                    activity_suggestion_id,
-                    duration_minutes,
-                )
+                res = book_lesson(client, tid, target_slot_iso, duration_minutes)
 
             if res.get("status") == "success":
                 logger.info(f"{prefix}BOOKED: {tname} ({tid})")
@@ -529,9 +513,8 @@ def _run_schedule(
             b for b in bookings if b.get("status") == "approved" and not b.get("past")
         ]
 
-        # Both fetched once per run, before any window wait — everything slow
-        # and window-independent belongs on this side of the countdown.
-        focus = get_focus(client)
+        # Fetched once per run, before any window wait — everything slow and
+        # window-independent belongs on this side of the countdown.
         tutor_map = get_tutors_map(client)
 
         for rule, slot_key in due_rules:
@@ -618,7 +601,6 @@ def _run_schedule(
                 credentials=credentials,
                 cache_file=cache_file,
                 slot_key=slot_key,
-                focus=focus,
                 duration_minutes=duration,
             )
             if not success:

@@ -886,9 +886,9 @@ class TestRetryLogic:
             )
 
         assert book_fn.call_count == 2
-        # positional signature: (client, tid, iso, focus_type, activity_id, duration)
-        assert book_fn.call_args_list[0][0][5] == 60
-        assert book_fn.call_args_list[1][0][5] == 60
+        # positional signature: (client, tid, iso, duration)
+        assert book_fn.call_args_list[0][0][3] == 60
+        assert book_fn.call_args_list[1][0][3] == 60
 
     def test_no_reauth_when_401_appears_in_a_booking_id(self):
         """A booking id containing 401 must not be mistaken for an auth failure."""

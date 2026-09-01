@@ -1,5 +1,5 @@
 from datetime import datetime as dt, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 import pytz
 
@@ -13,32 +13,6 @@ SLOT_MINUTES = 30
 def _api_ts(d: dt) -> str:
     """Formats a datetime as the millisecond UTC string the API expects."""
     return d.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-
-
-def get_focus(client: BookingClient) -> Tuple[Optional[str], Optional[int]]:
-    """
-    Returns (focus_type, activity_suggestion_id) from the student's suggested
-    activities, or (None, None) if unavailable.
-
-    The web UI sends these with every confirm; whether they are required is
-    unconfirmed. Degrading to (None, None) means a broken activities endpoint
-    costs us the lesson topic, not the booking.
-    """
-    try:
-        response = client.get(app_config.activities_endpoint)
-        if response.status_code != 200:
-            logger.warning(f"Activities fetch failed: {response.status_code}")
-            return None, None
-
-        activities = response.json().get("data", [])
-        if not activities:
-            return None, None
-
-        top = activities[0]
-        return (top.get("learning_goal", {}).get("title"), top.get("id"))
-    except Exception as e:
-        logger.warning(f"Could not fetch activities: {e}")
-        return None, None
 
 
 def get_bookings(client: BookingClient) -> List[Dict[str, Any]]:
@@ -124,12 +98,16 @@ def book_lesson(
     client: BookingClient,
     teacher_id: str,
     lesson_datetime: str,
-    focus_type: Optional[str] = None,
-    activity_suggestion_id: Optional[int] = None,
     duration_minutes: int = SLOT_MINUTES,
 ) -> Dict[str, Any]:
     """
     Books a lesson via the two-step hold-then-confirm flow.
+
+    Deliberately sends no focus_type / activity_suggestion_id, so classes land
+    with activity_id null and the tutor or coach chooses the topic — the same
+    state as a class booked on the website. We used to send the first entry of
+    /students/me/activities, which is ordered oldest-first, so every booking got
+    tagged with the account's very first (already completed) activity.
 
     duration_minutes may exceed one 30-minute slot: the API books a single
     longer lesson spanning consecutive slots, so a 60-minute class is one
@@ -167,9 +145,6 @@ def book_lesson(
             }
 
         payload = {**slot, "duration_minutes": duration_minutes}
-        if focus_type and activity_suggestion_id:
-            payload["focus_type"] = focus_type
-            payload["activity_suggestion_id"] = activity_suggestion_id
 
         confirm = client.post(app_config.confirm_endpoint, json=payload)
         if confirm.status_code != 200:
